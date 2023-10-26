@@ -1,9 +1,12 @@
+import pdb
+
 import lightning as L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
+from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 
 
 class AttentionPool(nn.Module):
@@ -22,12 +25,43 @@ class AttentionPool(nn.Module):
 
 
 class PairwiseFinetuned(L.LightningModule):
-    def __init__(self, lr: float, n_total_bins: int, avg_center_n_bins: int = 10):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        n_total_bins: int,
+        avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
         super().__init__()
         self.save_hyperparameters()
-        self.base = BaseEnformer.from_pretrained(
-            "EleutherAI/enformer-official-rough", target_length=n_total_bins
-        )
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+            self.base.load_state_dict(new_state_dict)
+
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
         self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
@@ -68,6 +102,11 @@ class PairwiseFinetuned(L.LightningModule):
         X1, X2, Y = batch["seq1"], batch["seq2"], batch["z_diff"].float()
         mse_loss = self.get_mse_loss(X1, X2, Y)
         self.log("train/mse_loss", mse_loss)
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        self.log(
+            "train/weight_decay",
+            self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+        )
         return mse_loss
 
     def validation_step(self, batch, batch_idx):
@@ -77,6 +116,13 @@ class PairwiseFinetuned(L.LightningModule):
         return mse_loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
-            filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr
+        optimizer = torch.optim.AdamW(
+            filter(lambda p: p.requires_grad, self.parameters()),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
         )
+        scheduler = LinearWarmupCosineAnnealingLR(
+            optimizer, warmup_epochs=10000, max_epochs=self.trainer.max_steps
+        )
+
+        return [optimizer], [scheduler]
