@@ -30,6 +30,73 @@ class SampleDataset(torch.utils.data.Dataset):
         return {"seq": seq, "y": y}
 
 
+class SampleNormalizedDataset(torch.utils.data.Dataset):
+    def __init__(self, filepath: str):
+        data = np.load(filepath)
+        self.genes = data["genes"]
+        self.seqs = data["seqs"]
+        self.samples = data["samples"]
+        self.Y = data["Y"]
+        self.Z = data["Z"]
+        assert (
+            self.genes.size
+            == self.seqs.shape[0]
+            == self.samples.size
+            == self.Y.size
+            == self.Z.size
+        )
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+
+    def get_total_n_bins(self):
+        seqlen = self.seqs.shape[-1]
+        assert seqlen % 128 == 0
+        return seqlen // 128
+
+    def __len__(self):
+        return self.seqs.shape[0]
+
+    def __getitem__(self, idx):
+        seq = self.seq_idx_embedder[self.seqs[idx]]
+        z = self.Z[idx]
+        return {"seq": seq, "z": z}
+
+
+class SampleNormalizedWithGeneDataset(torch.utils.data.Dataset):
+    def __init__(self, filepath: str):
+        data = np.load(filepath)
+        self.genes = data["genes"]
+        self.seqs = data["seqs"]
+        self.samples = data["samples"]
+        self.Y = data["Y"]
+        self.Z = data["Z"]
+        assert (
+            self.genes.size
+            == self.seqs.shape[0]
+            == self.samples.size
+            == self.Y.size
+            == self.Z.size
+        )
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+        self.unique_genes = np.unique(self.genes)
+        self.gene_to_idx = {g: i for i, g in enumerate(np.unique(self.genes))}
+
+    def get_total_n_bins(self):
+        seqlen = self.seqs.shape[-1]
+        assert seqlen % 128 == 0
+        return seqlen // 128
+
+    def __len__(self):
+        return self.seqs.shape[0]
+
+    def __getitem__(self, idx):
+        seq = self.seq_idx_embedder[self.seqs[idx]]
+        z = self.Z[idx]
+        gene = self.genes[idx]
+        return {"seq": seq, "z": z, "gene": gene}
+
+
 class RefDataset(torch.utils.data.Dataset):
     def __init__(self, filepath: str):
         data = np.load(filepath)

@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 from datasets import RefDataset, SampleDataset
-from models import PairwiseFinetuned
+from models import *
 from tqdm import tqdm
 
 
@@ -44,7 +44,7 @@ def main():
     )
 
     device = torch.device("cuda")
-    model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path).to(device)
+    model = SingleFinetuned.load_from_checkpoint(args.checkpoint_path).to(device)
 
     # Predict on reference sequences
     ref_preds = predict(model, ref_dl, device)
