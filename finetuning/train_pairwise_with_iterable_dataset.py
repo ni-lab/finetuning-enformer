@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--weight_decay", type=float, default=1e-2)
+    parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--val_n_pairs", type=int, default=5_000)
     parser.add_argument("--max_steps", type=int, default=500000)
