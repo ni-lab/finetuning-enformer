@@ -5,6 +5,7 @@ import torch
 from datasets import PairwiseDataset
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from models import PairwiseFinetuned
 from utils import BaseEnformerFreezeUnfreeze
@@ -49,6 +50,11 @@ def main():
     logger = WandbLogger(
         project="enformer-finetune", name=args.run_name, save_dir=args.save_dir
     )
+    checkpointing_cb = ModelCheckpoint(
+        monitor="val/mse_loss",
+        mode="min",
+        save_top_k=1,
+    )
     early_stopping_cb = EarlyStopping(monitor="val/mse_loss", mode="min", patience=2)
     # finetuning_cb = BaseEnformerFreezeUnfreeze(
     #     unfreeze_at_epoch=args.unfreeze_at_epoch,
@@ -64,7 +70,7 @@ def main():
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
-        callbacks=[early_stopping_cb],
+        callbacks=[checkpointing_cb, early_stopping_cb],
         # callbacks=[early_stopping_cb, finetuning_cb],
     )
 
