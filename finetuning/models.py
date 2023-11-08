@@ -285,14 +285,11 @@ class SingleWithGeneFinetuned(L.LightningModule):
             self.base.load_state_dict(new_state_dict)
 
         enformer_hidden_dim = 2 * self.base.dim
-        # have a separate attention pool for each gene
         self.all_genes = all_genes
         num_genes = len(all_genes)
         self.gene_to_id = {gene: i for i, gene in enumerate(all_genes)}
-        self.attention_pool = nn.ModuleList(
-            [AttentionPool(enformer_hidden_dim) for _ in range(num_genes)]
-        )
-        # also have an embedding for each gene
+        self.attention_pool = AttentionPool(enformer_hidden_dim)
+        # have an embedding for each gene
         self.gene_embedding = nn.Embedding(num_genes, enformer_hidden_dim)
         self.prediction_head = nn.Sequential(
             nn.Linear(enformer_hidden_dim * 2, 1024),
@@ -319,10 +316,7 @@ class SingleWithGeneFinetuned(L.LightningModule):
 
         assert X.shape[1] == self.hparams.n_total_bins
         X = X[:, self.center_start : self.center_end, :]
-        pool_X = []
-        for i in range(gene_ids.shape[0]):
-            pool_X.append(self.attention_pool[gene_ids[i]](X[(i * 2) : (i * 2 + 2)]))
-        X = torch.cat(pool_X, dim=0)  # (S * H, enformer_hidden_dim)
+        X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
         gene_embedding = self.gene_embedding(gene_ids)  # (S, enformer_hidden_dim)
         gene_embedding = (
             gene_embedding.unsqueeze(1).repeat(1, 2, 1).flatten(0, 1)
