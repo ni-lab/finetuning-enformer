@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 import utils
 
@@ -216,3 +217,73 @@ class PairwiseDatasetIterable(torch.utils.data.IterableDataset):
         seq2 = self.seq_idx_embedder[self.seqs[idx2]]
         z_diff = self.Z[idx1] - self.Z[idx2]
         yield {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
+
+
+class PairwiseMPRADataset(torch.utils.data.Dataset):
+    def __init__(self, filepath: str, split: str):
+        super().__init__()
+
+        assert split in [
+            "train",
+            "val",
+            "test",
+        ], "split must be one of train, val, test"
+
+        self.data = pd.read_csv(filepath, sep="\t")
+        self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
+
+        self.ref_sequences = self.data["ref_sequence"].values
+        self.alt_sequences = self.data["alt_sequence"].values
+        self.cell_types = []
+        self.variant_effects = []
+        for col in self.data.columns:
+            if "_normalized_variant_effect" in col:
+                self.cell_types.append(col.split("_")[0])
+                self.variant_effects.append(self.data[col].values)
+        self.variant_effects = np.stack(self.variant_effects, axis=1)
+        assert self.variant_effects.shape[1] == len(self.cell_types)
+        assert self.variant_effects.shape[0] == len(self.ref_sequences)
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+        self.ref_sequences = np.array(
+            [self.seq_idx_embedder[seq] for seq in self.ref_sequences]
+        )
+        self.alt_sequences = np.array(
+            [self.seq_idx_embedder[seq] for seq in self.alt_sequences]
+        )
+        assert (
+            self.ref_sequences.shape[0]
+            == self.alt_sequences.shape[0]
+            == self.variant_effects.shape[0]
+        )
+        assert self.ref_sequences.shape[1] == self.alt_sequences.shape[1] == 200
+
+        self.mask = ~np.isnan(self.variant_effects)
+        assert self.mask.shape[0] == self.variant_effects.shape[0]
+        assert self.mask.shape[1] == self.variant_effects.shape[1]
+
+    def get_num_cells(self):
+        return self.variant_effects.shape[1]
+
+    def get_cell_names(self):
+        return self.cell_types
+
+    def get_total_n_bins(self):
+        seqlen = len(self.ref_sequences[0])
+        return int(np.ceil(seqlen / 128))
+
+    def __len__(self):
+        return len(self.ref_sequences)
+
+    def __getitem__(self, idx):
+        ref_seq = self.ref_sequences[idx]
+        alt_seq = self.alt_sequences[idx]
+        variant_effect = self.variant_effects[idx]
+        mask = self.mask[idx]
+
+        yield {
+            "ref_seq": ref_seq,
+            "alt_seq": alt_seq,
+            "variant_effect": variant_effect,
+            "mask": mask,
+        }

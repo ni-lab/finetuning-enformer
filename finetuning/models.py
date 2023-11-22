@@ -368,3 +368,141 @@ class SingleWithGeneFinetuned(L.LightningModule):
             },
         }
         return config
+
+
+class PairwiseFinetunedMPRA(L.LightningModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        n_total_bins: int,
+        num_cells: int,
+        cell_names: list,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        self.cell_names = cell_names
+        self.num_cells = num_cells
+
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+            self.base.load_state_dict(new_state_dict)
+
+        enformer_hidden_dim = 2 * self.base.dim
+        self.prediction_head = nn.Linear(enformer_hidden_dim * n_total_bins, num_cells)
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, X):
+        """
+        X (tensor): (sample, length)
+        """
+        X = self.base(
+            X, return_only_embeddings=True
+        )  # (S, n_total_bins, enformer_hidden_dim)
+
+        assert X.shape[1] == self.hparams.n_total_bins
+        X = rearrange(X, "S L enformer_hidden_dim -> S (L enformer_hidden_dim)")
+        Y = self.prediction_head(X)  # (S, num_cells)
+        return Y
+
+    def training_step(self, batch, batch_idx):
+        ref_seq, alt_seq, variant_effect, mask = (
+            batch["ref_seq"],
+            batch["alt_seq"],
+            batch["variant_effect"],
+            batch["mask"],
+        )
+        ref_seq_pred = self(ref_seq)
+        alt_seq_pred = self(alt_seq)
+        variant_effect_pred = alt_seq_pred - ref_seq_pred
+        mse_loss = self.mse_loss(variant_effect_pred[mask], variant_effect[mask])
+
+        self.log("train/mse_loss", mse_loss)
+        # also log per cell type mse loss
+        for i, cell_name in enumerate(self.cell_names):
+            mask_cell = mask[:, i]
+            if mask_cell.sum() == 0:
+                continue
+            mse_loss_cell = self.mse_loss(
+                variant_effect_pred[mask_cell, i], variant_effect[mask_cell, i]
+            )
+            self.log(f"train/mse_loss_{cell_name}", mse_loss_cell)
+
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        self.log(
+            "train/weight_decay",
+            self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+        )
+        return mse_loss
+
+    def validation_step(self, batch, batch_idx):
+        ref_seq, alt_seq, variant_effect, mask = (
+            batch["ref_seq"],
+            batch["alt_seq"],
+            batch["variant_effect"],
+            batch["mask"],
+        )
+        ref_seq_pred = self(ref_seq)
+        alt_seq_pred = self(alt_seq)
+        variant_effect_pred = alt_seq_pred - ref_seq_pred
+        mse_loss = self.mse_loss(variant_effect_pred[mask], variant_effect[mask])
+
+        self.log("val/mse_loss", mse_loss)
+        # also log per cell type mse loss
+        for i, cell_name in enumerate(self.cell_names):
+            mask_cell = mask[:, i]
+            if mask_cell.sum() == 0:
+                continue
+            mse_loss_cell = self.mse_loss(
+                variant_effect_pred[mask_cell, i], variant_effect[mask_cell, i]
+            )
+            self.log(f"val/mse_loss_{cell_name}", mse_loss_cell)
+
+        return mse_loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            filter(lambda p: p.requires_grad, self.parameters()),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
+        )
+        scheduler = LinearWarmupCosineAnnealingLR(
+            optimizer,
+            warmup_epochs=10000,
+            max_epochs=self.trainer.max_steps,
+            eta_min=self.hparams.lr / 100,
+        )
+
+        config = {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
+        return config
