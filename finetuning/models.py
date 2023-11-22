@@ -433,7 +433,7 @@ class PairwiseFinetunedMPRA(L.LightningModule):
         ref_seq, alt_seq, variant_effect, mask = (
             batch["ref_seq"],
             batch["alt_seq"],
-            batch["variant_effect"],
+            batch["variant_effect"].float(),
             batch["mask"],
         )
         ref_seq_pred = self(ref_seq)
@@ -463,7 +463,7 @@ class PairwiseFinetunedMPRA(L.LightningModule):
         ref_seq, alt_seq, variant_effect, mask = (
             batch["ref_seq"],
             batch["alt_seq"],
-            batch["variant_effect"],
+            batch["variant_effect"].float(),
             batch["mask"],
         )
         ref_seq_pred = self(ref_seq)

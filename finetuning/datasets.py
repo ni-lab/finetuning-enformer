@@ -246,10 +246,10 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
 
         self.seq_idx_embedder = utils.create_seq_idx_embedder()
         self.ref_sequences = np.array(
-            [self.seq_idx_embedder[seq] for seq in self.ref_sequences]
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.ref_sequences]
         )
         self.alt_sequences = np.array(
-            [self.seq_idx_embedder[seq] for seq in self.alt_sequences]
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.alt_sequences]
         )
         assert (
             self.ref_sequences.shape[0]
@@ -281,7 +281,7 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
         variant_effect = self.variant_effects[idx]
         mask = self.mask[idx]
 
-        yield {
+        return {
             "ref_seq": ref_seq,
             "alt_seq": alt_seq,
             "variant_effect": variant_effect,
