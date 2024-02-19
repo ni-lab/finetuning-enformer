@@ -574,7 +574,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         base_predictions_head: str = None,
     ):
         """
-        X (tensor): (sample, haplotype, length) or (sample, length)
+        X (tensor): (sample, haplotype, length) or (sample, length, 4)
         """
         if X.ndim == 3:
             X = rearrange(X, "S H L -> (S H) L")
