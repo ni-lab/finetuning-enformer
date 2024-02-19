@@ -682,11 +682,11 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
     def on_validation_epoch_end(self):
         for metric_name, metric in self.human_metrics.items():
-            self.log(f"val/human_{metric_name}", metric.compute())
+            self.log(f"val/human_{metric_name}", metric.compute().mean())
             metric.reset()
 
         for metric_name, metric in self.mouse_metrics.items():
-            self.log(f"val/mouse_{metric_name}", metric.compute())
+            self.log(f"val/mouse_{metric_name}", metric.compute().mean())
             metric.reset()
 
     def configure_optimizers(self):
