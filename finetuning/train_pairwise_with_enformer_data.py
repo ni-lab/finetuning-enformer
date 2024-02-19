@@ -120,7 +120,7 @@ def main():
 
     trainer = Trainer(
         accelerator="gpu",
-        devices=1,
+        devices="auto",
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
         max_steps=args.max_steps,
