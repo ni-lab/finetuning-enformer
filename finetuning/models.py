@@ -523,7 +523,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         self.save_hyperparameters()
         if checkpoint is None:
             self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+                "EleutherAI/enformer-official-rough"
             )
         else:
             checkpoint = torch.load(checkpoint)
@@ -543,7 +543,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             else:
                 new_state_dict = checkpoint["state_dict"]
             self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+                "EleutherAI/enformer-official-rough"
             )
             self.base.load_state_dict(new_state_dict)
 
@@ -580,7 +580,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X = rearrange(X, "S H L -> (S H) L")
         if not return_base_predictions:
             X = self.base(
-                X, return_only_embeddings=True
+                X, return_only_embeddings=True, target_length=self.hparams.n_total_bins
             )  # (S * H, n_total_bins, enformer_hidden_dim)
 
             assert X.shape[1] == self.hparams.n_total_bins
@@ -591,7 +591,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y = Y.mean(dim=1)
             return Y
         else:
-            Y = self.base(X)
+            Y = self.base(X, target_length=896)
             Y = Y[base_predictions_head]
 
         return Y
