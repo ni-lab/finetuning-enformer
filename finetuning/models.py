@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
+from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from torchmetrics import MeanSquaredError, PearsonCorrCoef, SpearmanCorrCoef
 
@@ -578,10 +579,8 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         base_predictions_head: str = None,
     ):
         """
-        X (tensor): (sample, haplotype, length) or (sample, length, 4)
+        X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
         """
-        if X.ndim == 3 and not return_base_predictions:  # this is the pairwise data
-            X = rearrange(X, "S H L -> (S H) L")
         if not return_base_predictions:
             X = self.base(
                 X, return_only_embeddings=True, target_length=self.hparams.n_total_bins
@@ -599,17 +598,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
         return Y
 
-    def get_mse_loss(self, X1, X2, Y):
-        """
-        X1 (tensor): (sample, haplotype, length)
-        X2 (tensor): (sample, haplotype, length)
-        Y (tensor): (sample,)
-        """
-        X = torch.cat([X1, X2], dim=0)
-        Y_hat = self(X)
-        Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
-        return self.mse_loss(Y_hat, Y)
-
     def training_step(self, batch, batch_idx):
         total_loss = 0.0
 
@@ -618,11 +606,17 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
             if i == 0:  # this is the pairwise data
                 X1, X2, Y = (
-                    dl_batch["seq1"].half(),
-                    dl_batch["seq2"].half(),
+                    dl_batch["seq1"],
+                    dl_batch["seq2"],
                     dl_batch["z_diff"].half(),
                 )
-                mse_loss = self.get_mse_loss(X1, X2, Y)
+                X = torch.cat([X1, X2], dim=0)
+                X = rearrange(X, "S H L -> (S H) L")
+                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                X = X.half()
+                Y_hat = self(X)
+                Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
+                mse_loss = self.mse_loss(Y_hat, Y)
                 self.log("train/pairwise_mse_loss", mse_loss)
                 loss += mse_loss
             elif i == 1:  # this is the original human training data
@@ -650,16 +644,22 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         return total_loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        if dataloader_idx == 0:
+        if dataloader_idx == 0:  # this is the pairwise data
             X1, X2, Y = (
-                batch["seq1"].half(),
-                batch["seq2"].half(),
+                batch["seq1"],
+                batch["seq2"],
                 batch["z_diff"].half(),
             )
-            mse_loss = self.get_mse_loss(X1, X2, Y)
+            X = torch.cat([X1, X2], dim=0)
+            X = rearrange(X, "S H L -> (S H) L")
+            X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+            X = X.half()
+            Y_hat = self(X)
+            Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
+            mse_loss = self.mse_loss(Y_hat, Y)
             self.log("val/pairwise_mse_loss", mse_loss)
 
-        elif dataloader_idx == 1:
+        elif dataloader_idx == 1:  # this is the original human training data
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
             poisson_loss = self.poisson_loss(Y_hat, Y)
@@ -670,7 +670,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.human_metrics["pearson_corr"].update(Y_hat, Y)
             self.human_metrics["mse"].update(Y_hat, Y)
 
-        elif dataloader_idx == 2:
+        elif dataloader_idx == 2:  # this is the original mouse training data
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
             poisson_loss = self.poisson_loss(Y_hat, Y)
