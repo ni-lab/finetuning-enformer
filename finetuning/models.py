@@ -557,14 +557,14 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         self.center_end = self.center_start + avg_center_n_bins
 
         self.human_metrics = {
-            "spearman_corr": SpearmanCorrCoef(compute_on_step=False),
-            "pearson_corr": PearsonCorrCoef(compute_on_step=False),
-            "mse": MeanSquaredError(compute_on_step=False),
+            "spearman_corr": SpearmanCorrCoef(),
+            "pearson_corr": PearsonCorrCoef(),
+            "mse": MeanSquaredError(),
         }
         self.mouse_metrics = {
-            "spearman_corr": SpearmanCorrCoef(compute_on_step=False),
-            "pearson_corr": PearsonCorrCoef(compute_on_step=False),
-            "mse": MeanSquaredError(compute_on_step=False),
+            "spearman_corr": SpearmanCorrCoef(),
+            "pearson_corr": PearsonCorrCoef(),
+            "mse": MeanSquaredError(),
         }
 
     def forward(
