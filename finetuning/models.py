@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
+from torchmetrics import MeanSquaredError, PearsonCorrCoef, SpearmanCorrCoef
 
 
 class AttentionPool(nn.Module):
@@ -483,6 +484,203 @@ class PairwiseFinetunedMPRA(L.LightningModule):
             self.log(f"val/mse_loss_{cell_name}", mse_loss_cell)
 
         return mse_loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            filter(lambda p: p.requires_grad, self.parameters()),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
+        )
+        scheduler = LinearWarmupCosineAnnealingLR(
+            optimizer,
+            warmup_epochs=10000,
+            max_epochs=self.trainer.max_steps,
+            eta_min=self.hparams.lr / 100,
+        )
+
+        config = {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
+        return config
+
+
+class PairwiseWithOriginalDataJointTraining(L.LightningModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        n_total_bins: int,
+        avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough", target_length=n_total_bins
+            )
+            self.base.load_state_dict(new_state_dict)
+
+        enformer_hidden_dim = 2 * self.base.dim
+        self.attention_pool = AttentionPool(enformer_hidden_dim)
+        self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
+        self.mse_loss = nn.MSELoss()
+        self.poisson_loss = nn.PoissonNLLLoss()
+
+        self.center_start = (n_total_bins - avg_center_n_bins) // 2
+        self.center_end = self.center_start + avg_center_n_bins
+
+        self.human_metrics = {
+            "spearman_corr": SpearmanCorrCoef(compute_on_step=False),
+            "pearson_corr": PearsonCorrCoef(compute_on_step=False),
+            "mse": MeanSquaredError(compute_on_step=False),
+        }
+        self.mouse_metrics = {
+            "spearman_corr": SpearmanCorrCoef(compute_on_step=False),
+            "pearson_corr": PearsonCorrCoef(compute_on_step=False),
+            "mse": MeanSquaredError(compute_on_step=False),
+        }
+
+    def forward(
+        self,
+        X,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
+    ):
+        """
+        X (tensor): (sample, haplotype, length) or (sample, length)
+        """
+        if X.ndim == 3:
+            X = rearrange(X, "S H L -> (S H) L")
+        if not return_base_predictions:
+            X = self.base(
+                X, return_only_embeddings=True
+            )  # (S * H, n_total_bins, enformer_hidden_dim)
+
+            assert X.shape[1] == self.hparams.n_total_bins
+            X = X[:, self.center_start : self.center_end, :]
+            X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
+            Y = self.prediction_head(X)  # (S * H, 1)
+            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+            Y = Y.mean(dim=1)
+            return Y
+        else:
+            Y = self.base(X)
+            Y = Y[base_predictions_head]
+
+        return Y
+
+    def get_mse_loss(self, X1, X2, Y):
+        """
+        X1 (tensor): (sample, haplotype, length)
+        X2 (tensor): (sample, haplotype, length)
+        Y (tensor): (sample,)
+        """
+        X = torch.cat([X1, X2], dim=0)
+        Y_hat = self(X)
+        Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
+        return self.mse_loss(Y_hat, Y)
+
+    def training_step(self, batch, batch_idx):
+        total_loss = 0.0
+
+        for i, dl_batch in enumerate(batch):
+            loss = 0.0
+
+            if i == 0:  # this is the pairwise data
+                X1, X2, Y = (
+                    dl_batch["seq1"],
+                    dl_batch["seq2"],
+                    dl_batch["z_diff"].float(),
+                )
+                mse_loss = self.get_mse_loss(X1, X2, Y)
+                self.log("train/pairwise_mse_loss", mse_loss)
+                loss += mse_loss
+            elif i == 1:  # this is the original human training data
+                X, Y = dl_batch["seq"], dl_batch["y"].float()
+                Y_hat = self(
+                    X, return_base_predictions=True, base_predictions_head="human"
+                )
+                poisson_loss = self.poisson_loss(Y_hat, Y)
+                self.log("train/human_poisson_loss", poisson_loss)
+                loss += poisson_loss
+            elif i == 2:  # this is the original mouse training data
+                X, Y = dl_batch["seq"], dl_batch["y"].float()
+                Y_hat = self(
+                    X, return_base_predictions=True, base_predictions_head="mouse"
+                )
+                poisson_loss = self.poisson_loss(Y_hat, Y)
+                self.log("train/mouse_poisson_loss", poisson_loss)
+                loss += poisson_loss
+            else:
+                raise ValueError(f"Invalid number of dataloaders: {i+1}")
+
+            total_loss += loss
+
+        self.log("train/total_loss", total_loss)
+        return total_loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:
+            X1, X2, Y = batch["seq1"], batch["seq2"], batch["z_diff"].float()
+            mse_loss = self.get_mse_loss(X1, X2, Y)
+            self.log("val/pairwise_mse_loss", mse_loss)
+
+        elif dataloader_idx == 1:
+            X, Y = batch["seq"], batch["y"].float()
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
+            poisson_loss = self.poisson_loss(Y_hat, Y)
+            self.log("val/human_poisson_loss", poisson_loss)
+            self.human_metrics["spearman_corr"].update(Y_hat, Y)
+            self.human_metrics["pearson_corr"].update(Y_hat, Y)
+            self.human_metrics["mse"].update(Y_hat, Y)
+
+        elif dataloader_idx == 2:
+            X, Y = batch["seq"], batch["y"].float()
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
+            poisson_loss = self.poisson_loss(Y_hat, Y)
+            self.log("val/mouse_poisson_loss", poisson_loss)
+            self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
+            self.mouse_metrics["pearson_corr"].update(Y_hat, Y)
+            self.mouse_metrics["mse"].update(Y_hat, Y)
+
+        else:
+            raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
+
+    def on_validation_epoch_end(self):
+        for metric_name, metric in self.human_metrics.items():
+            self.log(f"val/human_{metric_name}", metric.compute())
+            metric.reset()
+
+        for metric_name, metric in self.mouse_metrics.items():
+            self.log(f"val/mouse_{metric_name}", metric.compute())
+            metric.reset()
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

@@ -1,7 +1,11 @@
+import json
+import os
+
 import numpy as np
 import pandas as pd
 import torch
 import utils
+from torchdata.datapipes.iter import FileLister, FileOpener
 
 
 class SampleDataset(torch.utils.data.Dataset):
@@ -287,3 +291,77 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
             "variant_effect": variant_effect,
             "mask": mask,
         }
+
+
+class EnformerDataset(torch.utils.data.IterableDataset):
+    def __init__(
+        self,
+        data_dir: str,
+        species: str,
+        split: str,
+        reverse_complement: bool = False,
+        random_shift: bool = False,
+    ):
+        super().__init__()
+
+        assert split in [
+            "train",
+            "val",
+            "test",
+        ], "split must be one of train, val, test"
+
+        assert species in [
+            "human",
+            "mouse",
+        ], "species must be one of human, mouse"
+
+        self.data_dir = data_dir
+        self.species = species
+        self.split = split
+        self.reverse_complement = reverse_complement
+        self.random_shift = random_shift
+
+        if self.split == "val" or self.split == "test":
+            if self.reverse_complement:
+                raise ValueError(
+                    "reverse_complement must be False for val and test splits"
+                )
+            if self.random_shift:
+                raise ValueError("random_shift must be False for val and test splits")
+        else:
+            if not (self.reverse_complement or self.random_shift):
+                print(
+                    "WARNING: reverse_complement and random_shift are both False for train split. Setting these to True can improve model performance."
+                )
+
+        self.enformer_species_data_dir = os.path.join(data_dir, species)
+
+        # read data parameters
+        data_stats_file = os.path.join(
+            self.enformer_species_data_dir, "statistics.json"
+        )
+        with open(data_stats_file) as data_stats_open:
+            self.data_stats = json.load(data_stats_open)
+
+        self.seq_length = self.data_stats["seq_length"]
+        self.seq_depth = self.data_stats.get("seq_depth", 4)
+        self.seq_1hot = self.data_stats.get("seq_1hot", False)
+        self.target_length = self.data_stats["target_length"]
+        self.num_targets = self.data_stats["num_targets"]
+
+        # construct TFRecords-based dataloader
+        self.datapipe1 = FileLister(
+            os.path.join(self.enformer_species_data_dir, "tfrecords"), f"{split}*.tfr"
+        )
+        self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+        self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+
+    def __iter__(self):
+        for example in self.tfrecord_loader_dp:
+            sequence = np.frombuffer(example["sequence"][0], dtype="uint8").reshape(
+                self.seq_length, self.seq_depth
+            )
+            targets = np.frombuffer(example["target"][0], dtype="float16").reshape(
+                self.target_length, self.num_targets
+            )
+            yield {"seq": sequence, "y": targets}
