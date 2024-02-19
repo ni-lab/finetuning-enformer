@@ -364,4 +364,22 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             targets = np.frombuffer(example["target"][0], dtype="float16").reshape(
                 self.target_length, self.num_targets
             )
+
+            if self.reverse_complement:
+                sequence = np.flip(sequence, axis=0)
+                targets = np.flip(targets, axis=0)
+
+                # order of bases is ACGT, so reverse-complement is just flipping the sequence
+                sequence = np.flip(sequence, axis=1)
+
+            if self.random_shift:
+                shift = np.random.randint(-3, 4)
+                sequence = np.roll(sequence, shift, axis=0)
+                # targets are not shifted
+                # zero out the shifted positions
+                if shift > 0:
+                    sequence[:shift] = 0
+                elif shift < 0:
+                    sequence[shift:] = 0
+
             yield {"seq": sequence, "y": targets}

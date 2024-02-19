@@ -55,8 +55,8 @@ def main():
         args.enformer_data_path,
         species="human",
         split="val",
-        reverse_complement=True,
-        random_shift=True,
+        reverse_complement=False,
+        random_shift=False,
     )
 
     mouse_enformer_train_ds = EnformerDataset(
@@ -70,8 +70,8 @@ def main():
         args.enformer_data_path,
         species="mouse",
         split="val",
-        reverse_complement=True,
-        random_shift=True,
+        reverse_complement=False,
+        random_shift=False,
     )
 
     train_dl = CombinedLoader(
