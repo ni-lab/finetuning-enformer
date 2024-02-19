@@ -366,11 +366,13 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             )
 
             if self.reverse_complement:
-                sequence = np.flip(sequence, axis=0)
-                targets = np.flip(targets, axis=0)
+                coin_flip = np.random.choice([True, False])
+                if coin_flip:
+                    sequence = np.flip(sequence, axis=0)
+                    targets = np.flip(targets, axis=0)
 
-                # order of bases is ACGT, so reverse-complement is just flipping the sequence
-                sequence = np.flip(sequence, axis=1)
+                    # order of bases is ACGT, so reverse-complement is just flipping the sequence
+                    sequence = np.flip(sequence, axis=1)
 
             if self.random_shift:
                 shift = np.random.randint(-3, 4)
