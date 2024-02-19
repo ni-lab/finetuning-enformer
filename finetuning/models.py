@@ -557,13 +557,13 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         self.center_end = self.center_start + avg_center_n_bins
 
         self.human_metrics = {
-            "spearman_corr": SpearmanCorrCoef(),
-            "pearson_corr": PearsonCorrCoef(),
+            "spearman_corr": SpearmanCorrCoef(num_outputs=5313),
+            "pearson_corr": PearsonCorrCoef(num_outputs=5313),
             "mse": MeanSquaredError(),
         }
         self.mouse_metrics = {
-            "spearman_corr": SpearmanCorrCoef(),
-            "pearson_corr": PearsonCorrCoef(),
+            "spearman_corr": SpearmanCorrCoef(num_outputs=1643),
+            "pearson_corr": PearsonCorrCoef(num_outputs=1643),
             "mse": MeanSquaredError(),
         }
 
