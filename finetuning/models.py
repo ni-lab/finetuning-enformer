@@ -558,14 +558,14 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
         self.human_metrics = nn.ModuleDict(
             {
-                "spearman_corr": SpearmanCorrCoef(num_outputs=5313),
+#                 "spearman_corr": SpearmanCorrCoef(num_outputs=5313),
                 "pearson_corr": PearsonCorrCoef(num_outputs=5313),
                 "mse": MeanSquaredError(),
             }
         )
         self.mouse_metrics = nn.ModuleDict(
             {
-                "spearman_corr": SpearmanCorrCoef(num_outputs=1643),
+#                 "spearman_corr": SpearmanCorrCoef(num_outputs=1643),
                 "pearson_corr": PearsonCorrCoef(num_outputs=1643),
                 "mse": MeanSquaredError(),
             }
@@ -662,7 +662,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.log("val/human_poisson_loss", poisson_loss)
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            self.human_metrics["spearman_corr"].update(Y_hat, Y)
+#             self.human_metrics["spearman_corr"].update(Y_hat, Y)
             self.human_metrics["pearson_corr"].update(Y_hat, Y)
             self.human_metrics["mse"].update(Y_hat, Y)
 
@@ -673,7 +673,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.log("val/mouse_poisson_loss", poisson_loss)
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
+#             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
             self.mouse_metrics["pearson_corr"].update(Y_hat, Y)
             self.mouse_metrics["mse"].update(Y_hat, Y)
 
