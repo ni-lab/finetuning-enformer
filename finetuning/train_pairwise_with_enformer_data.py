@@ -128,6 +128,7 @@ def main():
         logger=logger,
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
+        precision="16-mixed",
     )
 
     model = PairwiseWithOriginalDataJointTraining(
