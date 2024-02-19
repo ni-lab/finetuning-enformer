@@ -591,8 +591,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y = Y.mean(dim=1)
             return Y
         else:
-            Y = self.base(X, target_length=896)
-            Y = Y[base_predictions_head]
+            Y = self.base(X, head=base_predictions_head, target_length=896)
 
         return Y
 
