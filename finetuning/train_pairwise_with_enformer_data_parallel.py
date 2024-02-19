@@ -3,13 +3,12 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import torch
 from datasets import EnformerDataset, PairwiseDataset
-
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from lightning.pytorch.strategies import DDPStrategy
+from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from models import PairwiseWithOriginalDataJointTraining
 
 torch.manual_seed(97)
@@ -132,7 +131,7 @@ def main():
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
         precision="16-mixed",
-        strategy=DDPStrategy()
+        strategy=DDPStrategy(),
     )
 
     model = PairwiseWithOriginalDataJointTraining(

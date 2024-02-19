@@ -86,7 +86,7 @@ def main():
                 mouse_enformer_train_ds, batch_size=args.batch_size
             ),
         ],
-        mode="max_size",
+        mode="max_size_cycle",
     )
 
     val_dl = CombinedLoader(
@@ -120,7 +120,7 @@ def main():
 
     trainer = Trainer(
         accelerator="gpu",
-        devices="auto",
+        devices=1,
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
         max_steps=args.max_steps,
