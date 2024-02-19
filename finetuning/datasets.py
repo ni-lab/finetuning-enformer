@@ -358,8 +358,10 @@ class EnformerDataset(torch.utils.data.IterableDataset):
 
     def __iter__(self):
         for example in self.tfrecord_loader_dp:
-            sequence = np.frombuffer(example["sequence"][0], dtype="uint8").reshape(
-                self.seq_length, self.seq_depth
+            sequence = (
+                np.frombuffer(example["sequence"][0], dtype="uint8")
+                .reshape(self.seq_length, self.seq_depth)
+                .astype("int64")
             )
             targets = np.frombuffer(example["target"][0], dtype="float16").reshape(
                 self.target_length, self.num_targets
