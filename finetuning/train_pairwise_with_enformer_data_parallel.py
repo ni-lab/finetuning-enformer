@@ -7,12 +7,13 @@ from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.plugins.precision import MixedPrecision
 from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from models import PairwiseWithOriginalDataJointTraining
 
 torch.manual_seed(97)
-torch.set_float32_matmul_precision("medium")
+torch.set_float32_matmul_precision("highest")
 
 
 def parse_args():
@@ -131,7 +132,7 @@ def main():
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
         precision="16-mixed",
-        strategy=DDPStrategy(),
+        strategy="ddp",
     )
 
     model = PairwiseWithOriginalDataJointTraining(
