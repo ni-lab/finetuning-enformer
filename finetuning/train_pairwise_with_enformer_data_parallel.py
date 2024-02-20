@@ -111,13 +111,13 @@ def main():
     )
 
     checkpointing_cb = ModelCheckpoint(
-        monitor="val/pairwise_mse_loss",
+        monitor="val/pairwise_mse_loss/dataloader_idx_0",
         mode="min",
         save_top_k=1,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/pairwise_mse_loss", mode="min", patience=5
+        monitor="val/pairwise_mse_loss/dataloader_idx_0", mode="min", patience=5
     )
 
     os.environ["SLURM_JOB_NAME"] = "interactive"
