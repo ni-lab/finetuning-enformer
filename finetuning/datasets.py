@@ -352,25 +352,32 @@ class EnformerDataset(torch.utils.data.IterableDataset):
 
         # get worker info
         self.worker_info = torch.utils.data.get_worker_info()
-
-        # construct TFRecords-based dataloader, each worker will read a different set of files
         all_files = glob.glob(
             os.path.join(self.enformer_species_data_dir, "tfrecords", f"{split}*.tfr")
         )
-        self.this_worker_files = [
-            f
-            for f in all_files
-            if int(f.split("/")[-1].split(".")[0].split("-")[-1])
-            % self.worker_info.num_workers
-            == self.worker_info.id
-        ]
-        self.datapipe1 = FileLister(self.this_worker_files)
-        self.datapipe2 = FileOpener(self.datapipe1, mode="b")
-        self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+        if self.worker_info is not None:
+            print(f"Worker {self.worker_info.id} started")
 
-        print(
-            f"Worker {self.worker_info.id} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
-        )
+            # construct TFRecords-based dataloader, each worker will read a different set of files
+            self.this_worker_files = [
+                f
+                for f in all_files
+                if int(f.split("/")[-1].split(".")[0].split("-")[-1])
+                % self.worker_info.num_workers
+                == self.worker_info.id
+            ]
+            self.datapipe1 = FileLister(self.this_worker_files)
+            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+
+            print(
+                f"Worker {self.worker_info.id} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
+            )
+        else:
+            print("Main process started")
+            self.datapipe1 = FileLister(all_files)
+            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
 
     def __iter__(self):
         for example in self.tfrecord_loader_dp:
