@@ -580,8 +580,12 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
         """
         if not return_base_predictions:
-            X = self.base(
-                X, return_only_embeddings=True, target_length=self.hparams.n_total_bins
+            X = torch.nan_to_num(
+                self.base(
+                    X,
+                    return_only_embeddings=True,
+                    target_length=self.hparams.n_total_bins,
+                )
             )  # (S * H, n_total_bins, enformer_hidden_dim)
 
             assert X.shape[1] == self.hparams.n_total_bins
@@ -589,7 +593,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
             Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            Y = torch.nan_to_num(Y.mean(dim=1))
             return Y
         else:
             Y = torch.nan_to_num(
