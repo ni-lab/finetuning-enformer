@@ -131,7 +131,6 @@ def main():
             offload_optimizer=False,
             offload_parameters=True,
         ),
-        num_sanity_val_steps=-1,
     )
 
     model = PairwiseWithOriginalDataJointTraining(
