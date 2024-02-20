@@ -12,7 +12,7 @@ from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from models import PairwiseWithOriginalDataJointTraining
 
 torch.manual_seed(97)
-torch.set_float32_matmul_precision("highest")
+torch.set_float32_matmul_precision("medium")
 
 
 def parse_args():
