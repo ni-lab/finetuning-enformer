@@ -668,14 +668,14 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y_hat = self(X)
             Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
             mse_loss = self.mse_loss(Y_hat, Y)
-            self.log("val/pairwise_mse_loss", mse_loss)
+            self.log("val/pairwise_mse_loss", mse_loss, sync_dist=True)
 
         elif dataloader_idx == 1:  # this is the original human training data
             #             X, Y = batch["seq"], batch["y"]
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
             poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log("val/human_poisson_loss", poisson_loss)
+            self.log("val/human_poisson_loss", poisson_loss, sync_dist=True)
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.human_metrics["spearman_corr"].update(Y_hat, Y)
@@ -687,7 +687,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
             poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log("val/mouse_poisson_loss", poisson_loss)
+            self.log("val/mouse_poisson_loss", poisson_loss, sync_dist=True)
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
