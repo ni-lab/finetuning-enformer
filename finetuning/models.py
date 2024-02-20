@@ -608,7 +608,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 X1, X2, Y = (
                     dl_batch["seq1"],
                     dl_batch["seq2"],
-#                     dl_batch["z_diff"].float(),
+                    #                     dl_batch["z_diff"].float(),
                     dl_batch["z_diff"].half(),
                 )
                 X = torch.cat([X1, X2], dim=0)
@@ -621,7 +621,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 self.log("train/pairwise_mse_loss", mse_loss)
                 loss += mse_loss
             elif i == 1:  # this is the original human training data
-#                 X, Y = dl_batch["seq"], dl_batch["y"]
+                #                 X, Y = dl_batch["seq"], dl_batch["y"]
                 X, Y = dl_batch["seq"].half(), dl_batch["y"].half()
                 Y_hat = self(
                     X, return_base_predictions=True, base_predictions_head="human"
@@ -630,7 +630,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 self.log("train/human_poisson_loss", poisson_loss)
                 loss += poisson_loss
             elif i == 2:  # this is the original mouse training data
-#                 X, Y = dl_batch["seq"], dl_batch["y"]
+                #                 X, Y = dl_batch["seq"], dl_batch["y"]
                 X, Y = dl_batch["seq"].half(), dl_batch["y"].half()
                 Y_hat = self(
                     X, return_base_predictions=True, base_predictions_head="mouse"
@@ -643,6 +643,11 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
             total_loss += loss
 
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        self.log(
+            "train/weight_decay",
+            self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+        )
         self.log("train/total_loss", total_loss)
         return total_loss
 
@@ -651,7 +656,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X1, X2, Y = (
                 batch["seq1"],
                 batch["seq2"],
-#                 batch["z_diff"].float(),
+                #                 batch["z_diff"].float(),
                 batch["z_diff"].half(),
             )
             X = torch.cat([X1, X2], dim=0)
@@ -664,7 +669,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.log("val/pairwise_mse_loss", mse_loss)
 
         elif dataloader_idx == 1:  # this is the original human training data
-#             X, Y = batch["seq"], batch["y"]
+            #             X, Y = batch["seq"], batch["y"]
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
             poisson_loss = self.poisson_loss(Y_hat, Y)
@@ -676,7 +681,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.human_metrics["mse"].update(Y_hat, Y)
 
         elif dataloader_idx == 2:  # this is the original mouse training data
-#             X, Y = batch["seq"], batch["y"]
+            #             X, Y = batch["seq"], batch["y"]
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
             poisson_loss = self.poisson_loss(Y_hat, Y)
