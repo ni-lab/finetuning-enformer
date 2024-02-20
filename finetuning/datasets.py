@@ -356,8 +356,18 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.datapipe2 = FileOpener(self.datapipe1, mode="b")
         self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
 
+        self.worker_info = torch.utils.data.get_worker_info()
+
     def __iter__(self):
+        counter = 0
         for example in self.tfrecord_loader_dp:
+            if self.worker_info is not None:
+                if counter % self.worker_info.num_workers != self.worker_info.id:
+                    counter += 1
+                    continue
+                else:
+                    counter += 1
+
             sequence = np.frombuffer(example["sequence"][0], dtype="uint8").reshape(
                 self.seq_length, self.seq_depth
             )
