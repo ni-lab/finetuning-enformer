@@ -552,7 +552,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         self.attention_pool = AttentionPool(enformer_hidden_dim)
         self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
         self.mse_loss = nn.MSELoss()
-        self.poisson_loss = nn.PoissonNLLLoss(log_input=False, eps=1e-4)
+        self.poisson_loss = nn.PoissonNLLLoss(log_input=False, eps=1e-3)
 
         self.center_start = (n_total_bins - avg_center_n_bins) // 2
         self.center_end = self.center_start + avg_center_n_bins
@@ -594,7 +594,9 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y = Y.mean(dim=1)
             return Y
         else:
-            Y = self.base(X, head=base_predictions_head, target_length=896)
+            Y = torch.nan_to_num(
+                self.base(X, head=base_predictions_head, target_length=896)
+            )
 
         return Y
 

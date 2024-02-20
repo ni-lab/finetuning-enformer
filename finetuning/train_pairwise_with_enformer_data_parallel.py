@@ -134,6 +134,7 @@ def main():
         precision="16-mixed",
         accumulate_grad_batches=(64 // (args.batch_size * 4)),
         strategy="ddp",
+        num_sanity_val_steps=-1,
     )
 
     model = PairwiseWithOriginalDataJointTraining(
