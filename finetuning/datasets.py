@@ -351,35 +351,34 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.num_targets = self.data_stats["num_targets"]
 
         # get process rank
-        if torch.distributed.is_available() and torch.distributed.is_initialized():
-            self.world_size = torch.distributed.get_world_size()
-            self.rank = torch.distributed.get_rank()
+        self.world_size = torch.distributed.get_world_size()
+        self.rank = torch.distributed.get_rank()
 
         all_files = glob.glob(
             os.path.join(self.enformer_species_data_dir, "tfrecords", f"{split}*.tfr")
         )
-        if torch.distributed.is_available() and torch.distributed.is_initialized():
-            print(f"Worker {self.rank} started")
 
-            # construct TFRecords-based dataloader, each worker will read a different set of files
-            self.this_worker_files = [
-                f
-                for f in all_files
-                if int(f.split("/")[-1].split(".")[0].split("-")[-1]) % self.world_size
-                == self.rank
-            ]
-            self.datapipe1 = FileLister(self.this_worker_files)
-            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
-            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+        print(f"Worker {self.rank} started")
 
-            print(
-                f"Worker {self.rank} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
-            )
-        else:
-            print("Main process started")
-            self.datapipe1 = FileLister(all_files)
-            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
-            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+        # construct TFRecords-based dataloader, each worker will read a different set of files
+        self.this_worker_files = [
+            f
+            for f in all_files
+            if int(f.split("/")[-1].split(".")[0].split("-")[-1]) % self.world_size
+            == self.rank
+        ]
+        self.datapipe1 = FileLister(self.this_worker_files)
+        self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+        self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+
+        print(
+            f"Worker {self.rank} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
+        )
+        # else:
+        #     print("Main process started")
+        #     self.datapipe1 = FileLister(all_files)
+        #     self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+        #     self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
 
     def __iter__(self):
         for example in self.tfrecord_loader_dp:
