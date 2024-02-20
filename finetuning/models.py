@@ -561,14 +561,12 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             {
                 #                 "spearman_corr": SpearmanCorrCoef(num_outputs=5313),
                 "pearson_corr": PearsonCorrCoef(num_outputs=5313),
-                "mse": MeanSquaredError(),
             }
         )
         self.mouse_metrics = nn.ModuleDict(
             {
                 #                 "spearman_corr": SpearmanCorrCoef(num_outputs=1643),
                 "pearson_corr": PearsonCorrCoef(num_outputs=1643),
-                "mse": MeanSquaredError(),
             }
         )
 
@@ -680,7 +678,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.human_metrics["spearman_corr"].update(Y_hat, Y)
             self.human_metrics["pearson_corr"].update(Y_hat, Y)
-            self.human_metrics["mse"].update(Y_hat, Y)
 
         elif dataloader_idx == 2:  # this is the original mouse training data
             #             X, Y = batch["seq"], batch["y"]
@@ -692,7 +689,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
             self.mouse_metrics["pearson_corr"].update(Y_hat, Y)
-            self.mouse_metrics["mse"].update(Y_hat, Y)
 
         else:
             raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
