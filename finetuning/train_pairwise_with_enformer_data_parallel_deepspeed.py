@@ -79,7 +79,7 @@ def main():
     train_dl = CombinedLoader(
         [
             torch.utils.data.DataLoader(
-                pairwise_train_ds, batch_size=args.batch_size, shuffle=True
+                pairwise_train_ds, batch_size=args.batch_size * 4, shuffle=True
             ),
             torch.utils.data.DataLoader(
                 human_enformer_train_ds, batch_size=args.batch_size
@@ -94,7 +94,7 @@ def main():
     val_dl = CombinedLoader(
         [
             torch.utils.data.DataLoader(
-                pairwise_val_ds, batch_size=args.batch_size, shuffle=False
+                pairwise_val_ds, batch_size=args.batch_size * 4, shuffle=False
             ),
             torch.utils.data.DataLoader(
                 human_enformer_val_ds, batch_size=args.batch_size
