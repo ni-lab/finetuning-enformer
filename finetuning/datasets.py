@@ -387,4 +387,4 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             seq = torch.tensor(sequence.copy())
             y = torch.tensor(targets.copy())
 
-            yield {"seq": sequence, "y": y}
+            yield {"seq": seq, "y": y}
