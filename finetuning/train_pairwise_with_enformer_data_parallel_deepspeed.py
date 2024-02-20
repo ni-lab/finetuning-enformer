@@ -90,20 +90,13 @@ def main():
         mode="min_size",
     )
 
-    val_dl = CombinedLoader(
-        [
-            torch.utils.data.DataLoader(
-                pairwise_val_ds, batch_size=args.batch_size * 4, shuffle=False
-            ),
-            torch.utils.data.DataLoader(
-                human_enformer_val_ds, batch_size=args.batch_size
-            ),
-            torch.utils.data.DataLoader(
-                mouse_enformer_val_ds, batch_size=args.batch_size
-            ),
-        ],
-        mode="sequential",
-    )
+    val_dl = [
+        torch.utils.data.DataLoader(
+            pairwise_val_ds, batch_size=args.batch_size * 4, shuffle=False
+        ),
+        torch.utils.data.DataLoader(human_enformer_val_ds, batch_size=args.batch_size),
+        torch.utils.data.DataLoader(mouse_enformer_val_ds, batch_size=args.batch_size),
+    ]
 
     logger = WandbLogger(
         project="enformer-finetune", name=args.run_name, save_dir=args.save_dir
@@ -148,6 +141,7 @@ def main():
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
     )
+    trainer.validate(model, dataloaders=val_dl)
     trainer.fit(model, train_dl, val_dl)
 
 
