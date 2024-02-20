@@ -31,8 +31,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--train_n_pairs", type=int, default=100_000)
     parser.add_argument("--val_n_pairs", type=int, default=5_000)
-    parser.add_argument("--max_epochs", type=int, default=10)
-    parser.add_argument("--max_steps", type=int, default=200000)
+    parser.add_argument("--max_epochs", type=int, default=20)
+    parser.add_argument("--max_steps", type=int, default=250000)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     return parser.parse_args()
@@ -79,7 +79,7 @@ def main():
     train_dl = CombinedLoader(
         [
             torch.utils.data.DataLoader(
-                pairwise_train_ds, batch_size=args.batch_size, shuffle=True
+                pairwise_train_ds, batch_size=args.batch_size * 4, shuffle=True
             ),
             torch.utils.data.DataLoader(
                 human_enformer_train_ds, batch_size=args.batch_size
@@ -88,13 +88,13 @@ def main():
                 mouse_enformer_train_ds, batch_size=args.batch_size
             ),
         ],
-        mode="max_size_cycle",
+        mode="min_size",
     )
 
     val_dl = CombinedLoader(
         [
             torch.utils.data.DataLoader(
-                pairwise_val_ds, batch_size=args.batch_size, shuffle=False
+                pairwise_val_ds, batch_size=args.batch_size * 4, shuffle=False
             ),
             torch.utils.data.DataLoader(
                 human_enformer_val_ds, batch_size=args.batch_size
@@ -132,6 +132,7 @@ def main():
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
         precision="16-mixed",
+        accumulate_grad_batches=(64 // (args.batch_size * 4)),
         strategy="ddp",
     )
 

@@ -30,8 +30,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--train_n_pairs", type=int, default=100_000)
     parser.add_argument("--val_n_pairs", type=int, default=5_000)
-    parser.add_argument("--max_epochs", type=int, default=10)
-    parser.add_argument("--max_steps", type=int, default=500000)
+    parser.add_argument("--max_epochs", type=int, default=20)
+    parser.add_argument("--max_steps", type=int, default=250000)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     return parser.parse_args()
@@ -87,7 +87,7 @@ def main():
                 mouse_enformer_train_ds, batch_size=args.batch_size
             ),
         ],
-        mode="max_size_cycle",
+        mode="min_size",
     )
 
     val_dl = CombinedLoader(
