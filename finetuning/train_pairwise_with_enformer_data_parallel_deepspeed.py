@@ -130,6 +130,7 @@ def main():
             stage=2,
             offload_optimizer=False,
             offload_parameters=True,
+            min_loss_scale=0,
         ),
     )
 
