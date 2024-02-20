@@ -3,13 +3,12 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import torch
 from datasets import EnformerDataset, PairwiseDataset
-
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from lightning.pytorch.strategies import DDPStrategy, DeepSpeedStrategy
+from lightning.pytorch.utilities.combined_loader import CombinedLoader
 from models import PairwiseWithOriginalDataJointTraining
 
 torch.manual_seed(97)
@@ -32,7 +31,7 @@ def parse_args():
     parser.add_argument("--train_n_pairs", type=int, default=100_000)
     parser.add_argument("--val_n_pairs", type=int, default=5_000)
     parser.add_argument("--max_epochs", type=int, default=10)
-    parser.add_argument("--max_steps", type=int, default=200000)
+    parser.add_argument("--max_steps", type=int, default=500000)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     return parser.parse_args()
@@ -132,8 +131,13 @@ def main():
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
         precision="16-mixed",
-        accumulate_grad_batches=(64//(args.batch_size * 8)),
-        strategy=DeepSpeedStrategy(logging_batch_size_per_gpu=args.batch_size, stage=2, offload_optimizer=False, offload_parameters=True)
+        accumulate_grad_batches=(64 // (args.batch_size * 8)),
+        strategy=DeepSpeedStrategy(
+            logging_batch_size_per_gpu=args.batch_size,
+            stage=2,
+            offload_optimizer=False,
+            offload_parameters=True,
+        ),
     )
 
     model = PairwiseWithOriginalDataJointTraining(
