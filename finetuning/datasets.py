@@ -360,7 +360,7 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.this_worker_files = [
             f
             for f in all_files
-            if int(f.split("/")[-1].split(".")[0].split("_")[-1])
+            if int(f.split("/")[-1].split(".")[0].split("-")[-1])
             % self.worker_info.num_workers
             == self.worker_info.id
         ]
