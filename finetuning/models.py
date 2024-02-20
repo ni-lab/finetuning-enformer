@@ -711,14 +711,14 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             metric.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
+        optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
             lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay,
+            # weight_decay=self.hparams.weight_decay,
         )
         scheduler = LinearWarmupCosineAnnealingLR(
             optimizer,
-            warmup_epochs=10000,
+            warmup_epochs=1000,
             max_epochs=self.trainer.max_steps,
             eta_min=self.hparams.lr / 100,
         )

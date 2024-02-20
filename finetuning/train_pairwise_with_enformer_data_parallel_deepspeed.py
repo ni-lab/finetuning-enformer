@@ -22,8 +22,8 @@ def parse_args():
     parser.add_argument("enformer_data_path", type=str)
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--weight_decay", type=float, default=1e-3)
+    parser.add_argument("--lr", type=float, default=1e-5)
+    # parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--unfreeze_at_epoch", type=int, default=1)
     parser.add_argument("--initial_denom_lr", type=float, default=1.0)
     parser.add_argument("--train_bn", action=BooleanOptionalAction, default=True)
@@ -119,7 +119,7 @@ def main():
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
         max_steps=args.max_steps,
-        gradient_clip_val=0.2,
+        gradient_clip_val=1.0,
         logger=logger,
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
