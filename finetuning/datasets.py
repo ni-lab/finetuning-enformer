@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 
@@ -349,25 +350,30 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.target_length = self.data_stats["target_length"]
         self.num_targets = self.data_stats["num_targets"]
 
-        # construct TFRecords-based dataloader
-        self.datapipe1 = FileLister(
-            os.path.join(self.enformer_species_data_dir, "tfrecords"), f"{split}*.tfr"
+        # get worker info
+        self.worker_info = torch.utils.data.get_worker_info()
+
+        # construct TFRecords-based dataloader, each worker will read a different set of files
+        all_files = glob.glob(
+            os.path.join(self.enformer_species_data_dir, "tfrecords", f"{split}*.tfr")
         )
+        self.this_worker_files = [
+            f
+            for f in all_files
+            if int(f.split("/")[-1].split(".")[0].split("_")[-1])
+            % self.worker_info.num_workers
+            == self.worker_info.id
+        ]
+        self.datapipe1 = FileLister(self.this_worker_files)
         self.datapipe2 = FileOpener(self.datapipe1, mode="b")
         self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
 
-        self.worker_info = torch.utils.data.get_worker_info()
+        print(
+            f"Worker {self.worker_info.id} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
+        )
 
     def __iter__(self):
-        counter = 0
         for example in self.tfrecord_loader_dp:
-            if self.worker_info is not None:
-                if counter % self.worker_info.num_workers != self.worker_info.id:
-                    counter += 1
-                    continue
-                else:
-                    counter += 1
-
             sequence = np.frombuffer(example["sequence"][0], dtype="uint8").reshape(
                 self.seq_length, self.seq_depth
             )
