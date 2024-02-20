@@ -608,7 +608,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 X1, X2, Y = (
                     dl_batch["seq1"],
                     dl_batch["seq2"],
-                    dl_batch["z_diff"],
+                    dl_batch["z_diff"].float(),
                     # dl_batch["z_diff"].half(),
                 )
                 X = torch.cat([X1, X2], dim=0)
@@ -651,7 +651,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X1, X2, Y = (
                 batch["seq1"],
                 batch["seq2"],
-                batch["z_diff"],
+                batch["z_diff"].float(),
                 # batch["z_diff"].half(),
             )
             X = torch.cat([X1, X2], dim=0)
