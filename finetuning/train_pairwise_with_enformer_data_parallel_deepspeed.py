@@ -127,7 +127,7 @@ def main():
         strategy=DeepSpeedStrategy(
             logging_batch_size_per_gpu=args.batch_size,
             stage=2,
-            offload_optimizer=True,
+            offload_optimizer=False,
             offload_parameters=True,
             min_loss_scale=0,
         ),

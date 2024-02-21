@@ -4,7 +4,6 @@ import lightning as L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from deepspeed.ops.adam import DeepSpeedCPUAdam
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
@@ -707,7 +706,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             metric.reset()
 
     def configure_optimizers(self):
-        optimizer = DeepSpeedCPUAdam(
+        optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
             lr=self.hparams.lr,
         )
