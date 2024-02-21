@@ -23,7 +23,6 @@ def parse_args():
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=1e-5)
-    # parser.add_argument("--weight_decay", type=float, default=1e-3)
     parser.add_argument("--unfreeze_at_epoch", type=int, default=1)
     parser.add_argument("--initial_denom_lr", type=float, default=1.0)
     parser.add_argument("--train_bn", action=BooleanOptionalAction, default=True)
@@ -128,7 +127,7 @@ def main():
         strategy=DeepSpeedStrategy(
             logging_batch_size_per_gpu=args.batch_size,
             stage=2,
-            offload_optimizer=False,
+            offload_optimizer=True,
             offload_parameters=True,
             min_loss_scale=0,
         ),
@@ -136,7 +135,6 @@ def main():
 
     model = PairwiseWithOriginalDataJointTraining(
         lr=args.lr,
-        weight_decay=args.weight_decay,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
