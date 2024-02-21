@@ -23,7 +23,6 @@ def parse_args():
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=1e-5)
-    parser.add_argument("--unfreeze_at_epoch", type=int, default=1)
     parser.add_argument("--initial_denom_lr", type=float, default=1.0)
     parser.add_argument("--train_bn", action=BooleanOptionalAction, default=True)
     parser.add_argument("--batch_size", type=int, default=4)
