@@ -515,7 +515,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
     def __init__(
         self,
         lr: float,
-        weight_decay: float,
         n_total_bins: int,
         avg_center_n_bins: int = 10,
         checkpoint=None,
