@@ -582,7 +582,10 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                     X,
                     return_only_embeddings=True,
                     target_length=self.hparams.n_total_bins,
-                )
+                ),
+                0,
+                0,
+                0,
             )  # (S * H, n_total_bins, enformer_hidden_dim)
 
             assert X.shape[1] == self.hparams.n_total_bins
@@ -594,7 +597,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             return Y
         else:
             Y = torch.nan_to_num(
-                self.base(X, head=base_predictions_head, target_length=896)
+                self.base(X, head=base_predictions_head, target_length=896), 0, 0, 0
             )
 
         return Y
