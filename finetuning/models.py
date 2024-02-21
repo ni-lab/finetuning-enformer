@@ -665,45 +665,48 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y_hat = self(X)
             Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
             mse_loss = self.mse_loss(Y_hat, Y)
-            self.log("val/pairwise_mse_loss", mse_loss, sync_dist=True)
+            self.log("val/pairwise_mse_loss", mse_loss, sync_dist=True, on_epoch=True)
 
         elif dataloader_idx == 1:  # this is the original human training data
             #             X, Y = batch["seq"], batch["y"]
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
             poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log("val/human_poisson_loss", poisson_loss, sync_dist=True)
+            self.log(
+                "val/human_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
+            )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.human_metrics["spearman_corr"].update(Y_hat, Y)
-            self.human_metrics["pearson_corr"].update(Y_hat, Y)
+            self.human_metrics["pearson_corr"](Y_hat, Y)
+            self.log(
+                "val/human_pearson_corr",
+                self.human_metrics["pearson_corr"].mean(),
+                sync_dist=True,
+                on_epoch=True,
+            )
 
         elif dataloader_idx == 2:  # this is the original mouse training data
             #             X, Y = batch["seq"], batch["y"]
             X, Y = batch["seq"].half(), batch["y"].half()
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
             poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log("val/mouse_poisson_loss", poisson_loss, sync_dist=True)
+            self.log(
+                "val/mouse_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
+            )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
-            self.mouse_metrics["pearson_corr"].update(Y_hat, Y)
+            self.mouse_metrics["pearson_corr"](Y_hat, Y)
+            self.log(
+                "val/mouse_pearson_corr",
+                self.mouse_metrics["pearson_corr"].mean(),
+                sync_dist=True,
+                on_epoch=True,
+            )
 
         else:
             raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
-
-    def on_validation_epoch_end(self):
-        for metric_name, metric in self.human_metrics.items():
-            self.log(
-                f"val/human_{metric_name}", metric.compute().mean(), sync_dist=True
-            )
-            metric.reset()
-
-        for metric_name, metric in self.mouse_metrics.items():
-            self.log(
-                f"val/mouse_{metric_name}", metric.compute().mean(), sync_dist=True
-            )
-            metric.reset()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
