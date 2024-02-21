@@ -681,7 +681,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.human_metrics["pearson_corr"](Y_hat, Y)
             self.log(
                 "val/human_pearson_corr",
-                self.human_metrics["pearson_corr"].mean(),
+                self.human_metrics["pearson_corr"],
                 sync_dist=True,
                 on_epoch=True,
             )
@@ -700,7 +700,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             self.mouse_metrics["pearson_corr"](Y_hat, Y)
             self.log(
                 "val/mouse_pearson_corr",
-                self.mouse_metrics["pearson_corr"].mean(),
+                self.mouse_metrics["pearson_corr"],
                 sync_dist=True,
                 on_epoch=True,
             )
