@@ -77,7 +77,7 @@ def main():
     train_dl = CombinedLoader(
         [
             torch.utils.data.DataLoader(
-                pairwise_train_ds, batch_size=args.batch_size * 4, shuffle=True
+                pairwise_train_ds, batch_size=args.batch_size, shuffle=True
             ),
             torch.utils.data.DataLoader(
                 human_enformer_train_ds, batch_size=args.batch_size
@@ -91,7 +91,7 @@ def main():
 
     val_dl = [
         torch.utils.data.DataLoader(
-            pairwise_val_ds, batch_size=args.batch_size * 4, shuffle=False
+            pairwise_val_ds, batch_size=args.batch_size, shuffle=False
         ),
         torch.utils.data.DataLoader(human_enformer_val_ds, batch_size=args.batch_size),
         torch.utils.data.DataLoader(mouse_enformer_val_ds, batch_size=args.batch_size),
@@ -118,7 +118,7 @@ def main():
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
         max_steps=args.max_steps,
-        gradient_clip_val=1.0,
+        gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],

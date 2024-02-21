@@ -131,7 +131,6 @@ def main():
 
     model = PairwiseWithOriginalDataJointTraining(
         lr=args.lr,
-        weight_decay=args.weight_decay,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
