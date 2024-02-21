@@ -8,7 +8,7 @@ from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
-from torchmetrics import MeanSquaredError, PearsonCorrCoef, SpearmanCorrCoef
+from torchmetrics import R2Score
 
 
 class AttentionPool(nn.Module):
@@ -558,14 +558,12 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
 
         self.human_metrics = nn.ModuleDict(
             {
-                #                 "spearman_corr": SpearmanCorrCoef(num_outputs=5313),
-                "pearson_corr": PearsonCorrCoef(num_outputs=5313),
+                "r2_score": R2Score(num_outputs=5313),
             }
         )
         self.mouse_metrics = nn.ModuleDict(
             {
-                #                 "spearman_corr": SpearmanCorrCoef(num_outputs=1643),
-                "pearson_corr": PearsonCorrCoef(num_outputs=1643),
+                "r2_score": R2Score(num_outputs=1643),
             }
         )
 
@@ -678,10 +676,10 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.human_metrics["spearman_corr"].update(Y_hat, Y)
-            self.human_metrics["pearson_corr"](Y_hat, Y)
+            self.human_metrics["r2_score"](Y_hat, Y)
             self.log(
-                "val/human_pearson_corr",
-                self.human_metrics["pearson_corr"],
+                "val/human_r2_score",
+                self.human_metrics["r2_score"],
                 sync_dist=True,
                 on_epoch=True,
             )
@@ -697,10 +695,10 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
             #             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
-            self.mouse_metrics["pearson_corr"](Y_hat, Y)
+            self.mouse_metrics["r2_score"](Y_hat, Y)
             self.log(
-                "val/mouse_pearson_corr",
-                self.mouse_metrics["pearson_corr"],
+                "val/mouse_r2_score",
+                self.mouse_metrics["r2_score"],
                 sync_dist=True,
                 on_epoch=True,
             )
