@@ -510,7 +510,7 @@ class PairwiseFinetunedMPRA(L.LightningModule):
         return config
 
 
-class PairwiseWithOriginalDataJointTraining(L.LightningModule):
+class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
     def __init__(
         self,
         lr: float,
@@ -551,7 +551,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         self.attention_pool = AttentionPool(enformer_hidden_dim)
         self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
         self.mse_loss = nn.MSELoss()
-        self.poisson_loss = nn.PoissonNLLLoss(log_input=False, eps=1e-3)
+        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
 
         self.center_start = (n_total_bins - avg_center_n_bins) // 2
         self.center_end = self.center_start + avg_center_n_bins
@@ -577,15 +577,10 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
         X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
         """
         if not return_base_predictions:
-            X = torch.nan_to_num(
-                self.base(
-                    X,
-                    return_only_embeddings=True,
-                    target_length=self.hparams.n_total_bins,
-                ),
-                0,
-                0,
-                0,
+            X = self.base(
+                X,
+                return_only_embeddings=True,
+                target_length=self.hparams.n_total_bins,
             )  # (S * H, n_total_bins, enformer_hidden_dim)
 
             assert X.shape[1] == self.hparams.n_total_bins
@@ -593,12 +588,10 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
             Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = torch.nan_to_num(Y.mean(dim=1))
+            Y = Y.mean(dim=1)
             return Y
         else:
-            Y = torch.nan_to_num(
-                self.base(X, head=base_predictions_head, target_length=896), 0, 0, 0
-            )
+            Y = self.base(X, head=base_predictions_head, target_length=896)
 
         return Y
 
@@ -612,21 +605,18 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 X1, X2, Y = (
                     dl_batch["seq1"],
                     dl_batch["seq2"],
-                    #                     dl_batch["z_diff"].float(),
-                    dl_batch["z_diff"].half(),
+                    dl_batch["z_diff"].float(),
                 )
                 X = torch.cat([X1, X2], dim=0)
                 X = rearrange(X, "S H L -> (S H) L")
                 X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
-                X = X.half()
                 Y_hat = self(X)
                 Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
                 mse_loss = self.mse_loss(Y_hat, Y)
                 self.log("train/pairwise_mse_loss", mse_loss)
                 loss += mse_loss
             elif i == 1:  # this is the original human training data
-                #                 X, Y = dl_batch["seq"], dl_batch["y"]
-                X, Y = dl_batch["seq"].half(), dl_batch["y"].half()
+                X, Y = dl_batch["seq"], dl_batch["y"]
                 Y_hat = self(
                     X, return_base_predictions=True, base_predictions_head="human"
                 )
@@ -634,8 +624,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
                 self.log("train/human_poisson_loss", poisson_loss)
                 loss += poisson_loss
             elif i == 2:  # this is the original mouse training data
-                #                 X, Y = dl_batch["seq"], dl_batch["y"]
-                X, Y = dl_batch["seq"].half(), dl_batch["y"].half()
+                X, Y = dl_batch["seq"], dl_batch["y"]
                 Y_hat = self(
                     X, return_base_predictions=True, base_predictions_head="mouse"
                 )
@@ -656,21 +645,18 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             X1, X2, Y = (
                 batch["seq1"],
                 batch["seq2"],
-                #                 batch["z_diff"].float(),
-                batch["z_diff"].half(),
+                batch["z_diff"].float(),
             )
             X = torch.cat([X1, X2], dim=0)
             X = rearrange(X, "S H L -> (S H) L")
             X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
-            X = X.half()
             Y_hat = self(X)
             Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
             mse_loss = self.mse_loss(Y_hat, Y)
             self.log("val/pairwise_mse_loss", mse_loss, sync_dist=True, on_epoch=True)
 
         elif dataloader_idx == 1:  # this is the original human training data
-            #             X, Y = batch["seq"], batch["y"]
-            X, Y = batch["seq"].half(), batch["y"].half()
+            X, Y = batch["seq"], batch["y"]
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
             poisson_loss = self.poisson_loss(Y_hat, Y)
             self.log(
@@ -678,7 +664,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            #             self.human_metrics["spearman_corr"].update(Y_hat, Y)
             self.human_metrics["r2_score"](Y_hat, Y)
             self.log(
                 "val/human_r2_score",
@@ -688,8 +673,7 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             )
 
         elif dataloader_idx == 2:  # this is the original mouse training data
-            #             X, Y = batch["seq"], batch["y"]
-            X, Y = batch["seq"].half(), batch["y"].half()
+            X, Y = batch["seq"], batch["y"]
             Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
             poisson_loss = self.poisson_loss(Y_hat, Y)
             self.log(
@@ -697,7 +681,6 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            #             self.mouse_metrics["spearman_corr"].update(Y_hat, Y)
             self.mouse_metrics["r2_score"](Y_hat, Y)
             self.log(
                 "val/mouse_r2_score",
@@ -714,19 +697,4 @@ class PairwiseWithOriginalDataJointTraining(L.LightningModule):
             filter(lambda p: p.requires_grad, self.parameters()),
             lr=self.hparams.lr,
         )
-        scheduler = LinearWarmupCosineAnnealingLR(
-            optimizer,
-            warmup_epochs=1000,
-            max_epochs=self.trainer.max_steps,
-            eta_min=self.hparams.lr / 100,
-        )
-
-        config = {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            },
-        }
-        return config
+        return optimizer
