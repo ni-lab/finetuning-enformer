@@ -122,7 +122,7 @@ def main():
         logger=logger,
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb],
-        precision="16-mixed",
+        precision="32-true",
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)
         ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate

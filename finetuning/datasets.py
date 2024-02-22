@@ -350,6 +350,13 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.target_length = self.data_stats["target_length"]
         self.num_targets = self.data_stats["num_targets"]
 
+        if split == "train":
+            self.num_seqs = self.data_stats["train_seq"]
+        elif split == "val":
+            self.num_seqs = self.data_stats["valid_seqs"]
+        elif split == "test":
+            self.num_seqs = self.data_stats["test_seqs"]
+
         print("Main process started")
 
     def __iter__(self):
@@ -359,33 +366,31 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             )
         )
 
+        self.datapipe1 = FileLister(all_files)
+        self.datapipe2 = FileOpener(self.datapipe1, mode="b")
+        self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+
         # get process rank and shard data according to rank
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             self.world_size = torch.distributed.get_world_size()
             self.rank = torch.distributed.get_rank()
-
             print(f"Worker {self.rank} started")
-
-            # construct TFRecords-based dataloader, each worker will read a different set of files
-            self.this_worker_files = [
-                f
-                for f in all_files
-                if int(f.split("/")[-1].split(".")[0].split("-")[-1]) % self.world_size
-                == self.rank
-            ]
-            self.datapipe1 = FileLister(self.this_worker_files)
-            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
-            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
-
-            print(
-                f"Worker {self.rank} will read the following files: {[f.split('/')[-1] for f in self.this_worker_files]}"
-            )
         else:
-            self.datapipe1 = FileLister(all_files)
-            self.datapipe2 = FileOpener(self.datapipe1, mode="b")
-            self.tfrecord_loader_dp = self.datapipe2.load_from_tfrecord()
+            self.world_size = 1
+            self.rank = 0
 
+        # to make sure that each worker gets the same number of examples, trim off the last few examples
+        # that are not divisible by world_size
+        num_iterable_examples = (self.num_seqs // self.world_size) * self.world_size
+
+        counter = 0
         for example in self.tfrecord_loader_dp:
+            counter += 1
+            if counter > num_iterable_examples:
+                break
+            if counter % self.world_size != self.rank:
+                continue
+
             sequence = np.frombuffer(example["sequence"][0], dtype="uint8").reshape(
                 self.seq_length, self.seq_depth
             )
