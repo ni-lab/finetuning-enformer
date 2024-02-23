@@ -577,6 +577,8 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
         X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
         """
         if not return_base_predictions:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
             X = self.base(
                 X,
                 return_only_embeddings=True,
