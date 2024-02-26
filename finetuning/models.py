@@ -755,7 +755,7 @@ class PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision(
 
         # MPRA
         self.attention_pool_mpra = AttentionPool(enformer_hidden_dim)
-        self.prediction_head_mpra = nn.LazyLinear(enformer_hidden_dim, num_cells)
+        self.prediction_head_mpra = nn.Linear(enformer_hidden_dim, num_cells)
 
         self.mse_loss = nn.MSELoss()
         self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
