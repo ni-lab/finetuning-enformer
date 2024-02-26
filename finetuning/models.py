@@ -802,7 +802,7 @@ class PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision(
                 X = self.base(
                     X,
                     return_only_embeddings=True,
-                    target_length=None,
+                    target_length=-1,
                 )
                 X = self.attention_pool_mpra(X)
                 Y = self.prediction_head_mpra(X)
