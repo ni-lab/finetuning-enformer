@@ -861,8 +861,8 @@ class PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision(
                 mse_loss = self.mse_loss(
                     variant_effect_pred[mask], variant_effect[mask]
                 )
-
                 self.log("train/MPRA_mse_loss", mse_loss)
+                loss += mse_loss
                 # also log per cell type mse loss
                 for i, cell_name in enumerate(self.cell_names):
                     mask_cell = mask[:, i]
