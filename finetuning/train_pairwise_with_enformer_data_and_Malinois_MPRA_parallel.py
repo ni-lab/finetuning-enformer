@@ -74,8 +74,12 @@ def main():
         random_shift=False,
     )
 
-    MPRA_train_ds = PairwiseMPRADataset(args.mpra_data_path, split="train")
-    MPRA_val_ds = PairwiseMPRADataset(args.mpra_data_path, split="val")
+    MPRA_train_ds = PairwiseMPRADataset(
+        args.mpra_data_path, split="train", reverse_complement=True
+    )
+    MPRA_val_ds = PairwiseMPRADataset(
+        args.mpra_data_path, split="val", reverse_complement=False
+    )
 
     train_dl = CombinedLoader(
         [

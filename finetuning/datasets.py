@@ -277,7 +277,7 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
                     "reverse_complement must be False for val and test splits"
                 )
         else:
-            if not (self.reverse_complement or self.random_shift):
+            if not self.reverse_complement:
                 print(
                     "WARNING: reverse_complement and random_shift are both False for train split. Setting these to True can improve model performance."
                 )
