@@ -850,10 +850,10 @@ class PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision(
                 loss += poisson_loss
             elif i == 3:  # this is the MPRA data
                 ref_seq, alt_seq, variant_effect, mask = (
-                    batch["ref_seq"],
-                    batch["alt_seq"],
-                    batch["variant_effect"].float(),
-                    batch["mask"],
+                    dl_batch["ref_seq"],
+                    dl_batch["alt_seq"],
+                    dl_batch["variant_effect"].float(),
+                    dl_batch["mask"],
                 )
                 ref_seq_pred = self(ref_seq, return_mpra_predictions=True)
                 alt_seq_pred = self(alt_seq, return_mpra_predictions=True)
