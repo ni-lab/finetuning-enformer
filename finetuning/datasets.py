@@ -302,8 +302,8 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
         mask = self.mask[idx]
 
         # one-hot encode the sequences
-        ref_seq = seq_indices_to_one_hot(ref_seq).detach().numpy()
-        alt_seq = seq_indices_to_one_hot(alt_seq).detach().numpy()
+        ref_seq = seq_indices_to_one_hot(torch.tensor(ref_seq)).detach().numpy()
+        alt_seq = seq_indices_to_one_hot(torch.tensor(alt_seq)).detach().numpy()
 
         if self.reverse_complement:
             coin_flip = np.random.choice([True, False])
