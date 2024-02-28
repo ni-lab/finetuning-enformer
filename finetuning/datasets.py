@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 import utils
+from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from torchdata.datapipes.iter import FileLister, FileOpener
 
 
@@ -225,7 +226,7 @@ class PairwiseDatasetIterable(torch.utils.data.IterableDataset):
 
 
 class PairwiseMPRADataset(torch.utils.data.Dataset):
-    def __init__(self, filepath: str, split: str):
+    def __init__(self, filepath: str, split: str, reverse_complement: bool = False):
         super().__init__()
 
         assert split in [
@@ -233,6 +234,8 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
             "val",
             "test",
         ], "split must be one of train, val, test"
+
+        self.split = split
 
         self.data = pd.read_csv(filepath, sep="\t")
         self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
@@ -267,6 +270,18 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
         assert self.mask.shape[0] == self.variant_effects.shape[0]
         assert self.mask.shape[1] == self.variant_effects.shape[1]
 
+        self.reverse_complement = reverse_complement
+        if self.split == "val" or self.split == "test":
+            if self.reverse_complement:
+                raise ValueError(
+                    "reverse_complement must be False for val and test splits"
+                )
+        else:
+            if not self.reverse_complement:
+                print(
+                    "WARNING: reverse_complement and random_shift are both False for train split. Setting these to True can improve model performance."
+                )
+
     def get_num_cells(self):
         return self.variant_effects.shape[1]
 
@@ -285,6 +300,25 @@ class PairwiseMPRADataset(torch.utils.data.Dataset):
         alt_seq = self.alt_sequences[idx]
         variant_effect = self.variant_effects[idx]
         mask = self.mask[idx]
+
+        # one-hot encode the sequences
+        ref_seq = seq_indices_to_one_hot(torch.tensor(ref_seq)).detach().numpy()
+        alt_seq = seq_indices_to_one_hot(torch.tensor(alt_seq)).detach().numpy()
+
+        if self.reverse_complement:
+            coin_flip = np.random.choice([True, False])
+            if coin_flip:
+                ref_seq = np.flip(ref_seq, axis=0)
+                alt_seq = np.flip(alt_seq, axis=0)
+
+                # order of bases is ACGT, so reverse-complement is just flipping the sequence
+                ref_seq = np.flip(ref_seq, axis=1)
+                alt_seq = np.flip(alt_seq, axis=1)
+
+        ref_seq = torch.tensor(ref_seq.copy()).float()
+        alt_seq = torch.tensor(alt_seq.copy()).float()
+        variant_effect = torch.tensor(variant_effect.copy()).float()
+        mask = torch.tensor(mask.copy()).bool()
 
         return {
             "ref_seq": ref_seq,
