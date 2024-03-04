@@ -117,7 +117,6 @@ def main():
         devices="auto",
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
-        max_steps=args.max_steps,
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
