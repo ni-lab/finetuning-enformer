@@ -2,6 +2,7 @@ import glob
 import json
 import os
 
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -33,7 +34,63 @@ class SampleDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         seq = self.seq_idx_embedder[self.seqs[idx]]
-        y = np.min(self.Y[idx], 0)
+        y = np.max(self.Y[idx], 0)
+        return {"seq": seq, "y": y}
+
+
+class SampleH5Dataset(torch.utils.data.Dataset):
+    def __init__(self, h5_path: str, seqlen: int, prefetch_seqs: bool = True):
+        """
+        If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
+        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
+        We recommend setting this to False only if you are trying to debug.
+        """
+        super().__init__()
+        assert seqlen % 128 == 0
+
+        self.h5_file = h5py.File(h5_path, "r")
+        self.seqlen = seqlen
+
+        # Load everything into memory
+        self.genes = self.h5_file["genes"][:].astype(str)
+        self.samples = self.h5_file["samples"][:].astype(str)
+        if prefetch_seqs:
+            self.seqs = self.h5_file["seqs"][:]  # (n_seqs, 2, length, 4)
+        else:
+            self.seqs = self.h5_file["seqs"]
+        assert self.seqs.shape[2] >= self.seqlen
+        self.Y = self.h5_file["Y"][:]
+        self.Z = self.h5_file["Z"][:]
+        self.percentiles = self.h5_file["P"][:]
+
+        assert (
+            self.genes.size
+            == self.samples.size
+            == self.seqs.shape[0]
+            == self.Y.size
+            == self.Z.size
+            == self.percentiles.size
+        )
+
+    def get_total_n_bins(self):
+        return self.seqlen // 128
+
+    def __len__(self):
+        return self.pairs.shape[0]
+
+    def __shorten_seq(self, seq):
+        """
+        seq: (2, seqlen, 4)
+        """
+        if seq.shape[1] == self.seqlen:
+            return seq
+        start_idx = (seq.shape[1] - self.seqlen) // 2
+        end_idx = start_idx + self.seqlen
+        return seq[:, start_idx:end_idx, :]
+
+    def __getitem__(self, idx):
+        seq = self.__shorten_seq(self.seqs[idx]).astype(np.float32)
+        y = np.max(self.Y[idx], 0.0)
         return {"seq": seq, "y": y}
 
 
@@ -223,6 +280,189 @@ class PairwiseDatasetIterable(torch.utils.data.IterableDataset):
         seq2 = self.seq_idx_embedder[self.seqs[idx2]]
         z_diff = self.Z[idx1] - self.Z[idx2]
         yield {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
+
+
+class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        h5_path: str,
+        n_pairs_per_gene: int,
+        seqlen: int,
+        prefetch_seqs: bool = True,
+        random_seed: int = 42,
+    ):
+        """
+        If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
+        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
+        We recommend setting this to False only if you are trying to debug.
+        """
+        super().__init__()
+        assert seqlen % 128 == 0
+
+        self.h5_file = h5py.File(h5_path, "r")
+        self.n_pairs_per_gene = n_pairs_per_gene
+        self.seqlen = seqlen
+        self.rng = np.random.default_rng(random_seed)
+
+        # Load everything into memory
+        self.genes = self.h5_file["genes"][:].astype(str)
+        self.samples = self.h5_file["samples"][:].astype(str)
+        if prefetch_seqs:
+            self.seqs = self.h5_file["seqs"][:]  # (n_seqs, 2, length, 4)
+        else:
+            self.seqs = self.h5_file["seqs"]
+        assert self.seqs.shape[2] >= self.seqlen
+        self.Y = self.h5_file["Y"][:]
+        self.Z = self.h5_file["Z"][:]
+        self.percentiles = self.h5_file["P"][:]
+
+        assert (
+            self.genes.size
+            == self.samples.size
+            == self.seqs.shape[0]
+            == self.Y.size
+            == self.Z.size
+            == self.percentiles.size
+        )
+
+        self.pairs = self.__sample_pairs()
+
+    def __sample_pairs(self):
+        unique_genes = sorted(np.unique(self.genes))
+        gene_to_idxs = {g: np.where(self.genes == g)[0] for g in unique_genes}
+
+        pairs = []
+        for g in unique_genes:
+            g_idxs = gene_to_idxs[g]
+            pairs.extend(
+                [
+                    self.rng.choice(g_idxs, size=2, replace=False)
+                    for _ in range(self.n_pairs_per_gene)
+                ]
+            )
+        pairs = np.array(pairs)
+        self.rng.shuffle(pairs)
+        return pairs
+
+    def get_total_n_bins(self):
+        return self.seqlen // 128
+
+    def __len__(self):
+        return self.pairs.shape[0]
+
+    def __shorten_seq(self, seq):
+        """
+        seq: (2, seqlen, 4)
+        """
+        if seq.shape[1] == self.seqlen:
+            return seq
+        start_idx = (seq.shape[1] - self.seqlen) // 2
+        end_idx = start_idx + self.seqlen
+        return seq[:, start_idx:end_idx, :]
+
+    def __getitem__(self, idx):
+        seq_idx1, seq_idx2 = self.pairs[idx]
+        assert self.genes[seq_idx1] == self.genes[seq_idx2]
+        assert self.samples[seq_idx1] != self.samples[seq_idx2]
+
+        seq1 = self.__shorten_seq(self.seqs[seq_idx1].astype(np.float32))
+        seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
+        z_diff = self.Z[seq_idx1] - self.Z[seq_idx2]
+        return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
+
+
+class PairwiseClassifcationH5Dataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        h5_path: str,
+        n_pairs_per_gene: int,
+        seqlen: int,
+        min_percentile_diff: float = 25.0,
+        prefetch_seqs: bool = True,
+        random_seed: int = 42,
+    ):
+        """
+        If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
+        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
+        We recommend setting this to False only if you are trying to debug.
+        """
+        super().__init__()
+        assert seqlen % 128 == 0
+
+        self.h5_file = h5py.File(h5_path, "r")
+        self.n_pairs_per_gene = n_pairs_per_gene
+        self.seqlen = seqlen
+        self.min_percentile_diff = min_percentile_diff
+        self.rng = np.random.default_rng(random_seed)
+
+        # Load everything into memory
+        self.genes = self.h5_file["genes"][:].astype(str)
+        self.samples = self.h5_file["samples"][:].astype(str)
+        if prefetch_seqs:
+            self.seqs = self.h5_file["seqs"][:]  # (n_seqs, 2, length, 4)
+        else:
+            self.seqs = self.h5_file["seqs"]
+        assert self.seqs.shape[2] >= self.seqlen
+        self.Y = self.h5_file["Y"][:]
+        self.Z = self.h5_file["Z"][:]
+        self.percentiles = self.h5_file["P"][:]
+
+        assert (
+            self.genes.size
+            == self.samples.size
+            == self.seqs.shape[0]
+            == self.Y.size
+            == self.Z.size
+            == self.percentiles.size
+        )
+
+        self.pairs = self.__sample_pairs()
+
+    def __sample_pairs(self):
+        unique_genes = sorted(np.unique(self.genes))
+        gene_to_idxs = {g: np.where(self.genes == g)[0] for g in unique_genes}
+
+        pairs = []
+        for g in unique_genes:
+            g_idxs = gene_to_idxs[g]
+            g_pairs = []
+            while len(g_pairs) < self.n_pairs_per_gene:
+                idxs = self.rng.choice(g_idxs, size=2, replace=False)
+                percentile_diff = np.abs(
+                    self.percentiles[idxs[0]] - self.percentiles[idxs[1]]
+                )
+                if percentile_diff > self.min_percentile_diff:
+                    g_pairs.append(idxs)
+            pairs.extend(g_pairs)
+        pairs = np.array(pairs)
+        self.rng.shuffle(pairs)
+        return pairs
+
+    def get_total_n_bins(self):
+        return self.seqlen // 128
+
+    def __len__(self):
+        return self.pairs.shape[0]
+
+    def __shorten_seq(self, seq):
+        """
+        seq: (2, seqlen, 4)
+        """
+        if seq.shape[1] == self.seqlen:
+            return seq
+        start_idx = (seq.shape[1] - self.seqlen) // 2
+        end_idx = start_idx + self.seqlen
+        return seq[:, start_idx:end_idx, :]
+
+    def __getitem__(self, idx):
+        seq_idx1, seq_idx2 = self.pairs[idx]
+        assert self.genes[seq_idx1] == self.genes[seq_idx2]
+        assert self.samples[seq_idx1] != self.samples[seq_idx2]
+
+        seq1 = self.__shorten_seq(self.seqs[seq_idx1].astype(np.float32))
+        seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
+        Y = int(self.Y[seq_idx1] >= self.Y[seq_idx2])
+        return {"seq1": seq1, "seq2": seq2, "Y": Y}
 
 
 class PairwiseMPRADataset(torch.utils.data.Dataset):
