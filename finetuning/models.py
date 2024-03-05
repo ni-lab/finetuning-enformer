@@ -4,7 +4,6 @@ import lightning as L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from deepspeed.ops.adam import FusedAdam
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
@@ -517,11 +516,36 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
         lr: float,
         n_total_bins: int,
         avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
     ):
         super().__init__()
         self.save_hyperparameters()
-
-        self.configure_model()
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+            self.base.load_state_dict(new_state_dict)
 
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
@@ -542,9 +566,6 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
                 "r2_score": R2Score(num_outputs=1643),
             }
         )
-
-    def configure_model(self):
-        self.base = BaseEnformer.from_pretrained("EleutherAI/enformer-official-rough")
 
     def forward(
         self,
@@ -866,7 +887,7 @@ class PairwiseWithOriginalDataJointTrainingHalfPrecision(L.LightningModule):
             raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
 
     def configure_optimizers(self):
-        optimizer = FusedAdam(
+        optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
             lr=self.hparams.lr,
         )
