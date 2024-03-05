@@ -121,7 +121,9 @@ def main():
 
     # 2. Pass the policy to the FSDPStrategy object
     strategy = FSDPStrategy(
-        auto_wrap_policy=policy, activation_checkpointing_policy=policy
+        auto_wrap_policy=policy,
+        activation_checkpointing_policy=policy,
+        sharding_strategy="SHARD_GRAD_OP",
     )
 
     trainer = Trainer(
@@ -129,6 +131,7 @@ def main():
         devices="auto",
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
+        gradient_clip_algorithm="value",
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,

@@ -181,7 +181,9 @@ class RefDataset(torch.utils.data.Dataset):
 
 
 class PairwiseDataset(torch.utils.data.Dataset):
-    def __init__(self, filepath: str, n_pairs: int):
+    def __init__(self, filepath: str, n_pairs: int, half_precision=False):
+        self.half_precision = half_precision
+
         data = np.load(filepath)
         self.genes = data["genes"]
         self.seqs = data["seqs"]
@@ -225,6 +227,12 @@ class PairwiseDataset(torch.utils.data.Dataset):
         seq1 = self.seq_idx_embedder[self.seqs[idx1]]
         seq2 = self.seq_idx_embedder[self.seqs[idx2]]
         z_diff = self.Z[idx1] - self.Z[idx2]
+
+        if self.half_precision:
+            seq1 = torch.tensor(seq1).half()
+            seq2 = torch.tensor(seq2).half()
+            z_diff = torch.tensor(z_diff).half()
+
         return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
 
 
@@ -576,6 +584,7 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         split: str,
         reverse_complement: bool = False,
         random_shift: bool = False,
+        half_precision: bool = False,
     ):
         super().__init__()
 
@@ -595,6 +604,7 @@ class EnformerDataset(torch.utils.data.IterableDataset):
         self.split = split
         self.reverse_complement = reverse_complement
         self.random_shift = random_shift
+        self.half_precision = half_precision
 
         if self.split == "val" or self.split == "test":
             if self.reverse_complement:
@@ -691,7 +701,11 @@ class EnformerDataset(torch.utils.data.IterableDataset):
                 elif shift < 0:
                     sequence[shift:] = 0
 
-            seq = torch.tensor(sequence.copy()).float()
-            y = torch.tensor(targets.copy()).float()
+            if self.half_precision:
+                seq = torch.tensor(sequence.copy()).half()
+                y = torch.tensor(targets.copy()).half()
+            else:
+                seq = torch.tensor(sequence.copy()).float()
+                y = torch.tensor(targets.copy()).float()
 
             yield {"seq": seq, "y": y}

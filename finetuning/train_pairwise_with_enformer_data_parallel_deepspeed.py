@@ -37,9 +37,11 @@ def main():
     args = parse_args()
 
     pairwise_train_ds = PairwiseDataset(
-        args.train_data_path, n_pairs=args.train_n_pairs
+        args.train_data_path, n_pairs=args.train_n_pairs, half_precision=True
     )
-    pairwise_val_ds = PairwiseDataset(args.val_data_path, n_pairs=args.val_n_pairs)
+    pairwise_val_ds = PairwiseDataset(
+        args.val_data_path, n_pairs=args.val_n_pairs, half_precision=True
+    )
 
     human_enformer_train_ds = EnformerDataset(
         args.enformer_data_path,
@@ -47,6 +49,7 @@ def main():
         split="train",
         reverse_complement=True,
         random_shift=True,
+        half_precision=True,
     )
     human_enformer_val_ds = EnformerDataset(
         args.enformer_data_path,
@@ -54,6 +57,7 @@ def main():
         split="val",
         reverse_complement=False,
         random_shift=False,
+        half_precision=True,
     )
 
     mouse_enformer_train_ds = EnformerDataset(
@@ -62,6 +66,7 @@ def main():
         split="train",
         reverse_complement=True,
         random_shift=True,
+        half_precision=True,
     )
     mouse_enformer_val_ds = EnformerDataset(
         args.enformer_data_path,
@@ -69,6 +74,7 @@ def main():
         split="val",
         reverse_complement=False,
         random_shift=False,
+        half_precision=True,
     )
 
     train_dl = CombinedLoader(
