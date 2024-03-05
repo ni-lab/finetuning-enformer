@@ -28,8 +28,6 @@ def parse_args():
     parser.add_argument("--train_n_pairs", type=int, default=100_000)
     parser.add_argument("--val_n_pairs", type=int, default=5_000)
     parser.add_argument("--max_epochs", type=int, default=20)
-    parser.add_argument("--enformer_checkpoint", type=str, default=None)
-    parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     return parser.parse_args()
 
 
@@ -144,8 +142,6 @@ def main():
     model = PairwiseWithOriginalDataJointTrainingHalfPrecision(
         lr=args.lr,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
-        checkpoint=args.enformer_checkpoint,
-        state_dict_subset_prefix=args.state_dict_subset_prefix,
     )
     trainer.validate(model, dataloaders=val_dl)
     trainer.fit(model, train_dl, val_dl)
