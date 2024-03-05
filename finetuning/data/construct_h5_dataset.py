@@ -35,26 +35,63 @@ def parse_args():
     return parser.parse_args()
 
 
+def split_chromosomes_by_class(args, counts_df) -> dict[str, set]:
+    counts_by_chrom = counts_df["Chr"].value_counts().to_dict()
+
+    # Apportion chromosomes to each class in proportion to the number of genes
+    # from each class we wish to have
+    n_my_genes = args.n_random_split + args.n_yri_split + args.n_unseen
+    targets = {
+        "random_split": int(args.n_random_split / n_my_genes * counts_df.shape[0]),
+        "yri_split": int(args.n_yri_split / n_my_genes * counts_df.shape[0]),
+        "unseen": int(args.n_unseen / n_my_genes * counts_df.shape[0]),
+    }
+
+    chrom_by_class = {c: set() for c in targets}
+    running_totals = {c: 0 for c in targets}
+
+    for chrom in sorted(counts_by_chrom, key=counts_by_chrom.get, reverse=True):
+        for clazz, target in targets.items():
+            if (running_totals[clazz] + counts_by_chrom[chrom] <= target) or (
+                clazz == "unseen"
+            ):
+                chrom_by_class[clazz].add(chrom)
+                running_totals[clazz] += counts_by_chrom[chrom]
+                break
+
+    return chrom_by_class
+
+
 def get_genes(args):
-    counts_df = pd.read_csv(args.counts_path, index_col=0)
+    counts_df = pd.read_csv(args.counts_path, index_col="our_gene_name")
     counts_df = counts_df[counts_df["EUR_eGene"]].copy()
-    genes = counts_df["our_gene_name"].tolist()
+    assert counts_df.index.notnull().all()
+    chrom_by_class = split_chromosomes_by_class(args, counts_df)
 
     rng = np.random.default_rng(args.random_seed)
-    rng.shuffle(genes)
+
+    random_split_genes = rng.choice(
+        counts_df[counts_df["Chr"].isin(chrom_by_class["random_split"])].index,
+        size=args.n_random_split,
+        replace=False,
+    )
+    yri_split_genes = rng.choice(
+        counts_df[counts_df["Chr"].isin(chrom_by_class["yri_split"])].index,
+        size=args.n_yri_split,
+        replace=False,
+    )
+    unseen_genes = rng.choice(
+        counts_df[counts_df["Chr"].isin(chrom_by_class["unseen"])].index,
+        size=args.n_unseen,
+        replace=False,
+    )
 
     class_to_gene = {
-        "random_split": genes[: args.n_random_split],
-        "yri_split": genes[
-            args.n_random_split : args.n_random_split + args.n_yri_split
-        ],
-        "unseen": genes[
-            args.n_random_split
-            + args.n_yri_split : args.n_random_split
-            + args.n_yri_split
-            + args.n_unseen
-        ],
+        "random_split": random_split_genes,
+        "yri_split": yri_split_genes,
+        "unseen": unseen_genes,
     }
+
     return {g: c for c, genes in class_to_gene.items() for g in genes}
 
 
@@ -108,7 +145,7 @@ def collate_gene_data(args, gene):
     ancestries = [sample_to_ancestry_map[s] for s in samples]
 
     Y = counts_df.loc[gene, samples].to_numpy().astype(np.float32)
-    assert np.isnan(Y).any() == False, f"{gene} has NaNs in Y"
+    assert not np.isnan(Y).any(), f"{gene} has NaNs in Y"
     Z = zscore(Y)
     P = percentileofscore(Y, Y)
 
@@ -153,7 +190,6 @@ def flush_to_h5(input_f, output_f, idxs):
             current_size = output_dataset.shape[0]
             output_dataset.resize(current_size + data.shape[0], axis=0)
             output_dataset[current_size:] = data
-        print(f"Flushed {dataset_name} of size {data.shape} to {output_f.filename}")
     output_f.flush()
 
 
