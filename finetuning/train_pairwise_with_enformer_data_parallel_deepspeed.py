@@ -9,7 +9,7 @@ from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy, DeepSpeedStrategy
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
-from models import PairwiseWithOriginalDataJointTrainingFloatPrecision
+from models import PairwiseWithOriginalDataJointTrainingHalfPrecision
 
 torch.manual_seed(97)
 torch.set_float32_matmul_precision("medium")
@@ -37,11 +37,9 @@ def main():
     args = parse_args()
 
     pairwise_train_ds = PairwiseDataset(
-        args.train_data_path, n_pairs=args.train_n_pairs, half_precision=True
+        args.train_data_path, n_pairs=args.train_n_pairs
     )
-    pairwise_val_ds = PairwiseDataset(
-        args.val_data_path, n_pairs=args.val_n_pairs, half_precision=True
-    )
+    pairwise_val_ds = PairwiseDataset(args.val_data_path, n_pairs=args.val_n_pairs)
 
     human_enformer_train_ds = EnformerDataset(
         args.enformer_data_path,
@@ -143,7 +141,7 @@ def main():
         ),
     )
 
-    model = PairwiseWithOriginalDataJointTrainingFloatPrecision(
+    model = PairwiseWithOriginalDataJointTrainingHalfPrecision(
         lr=args.lr,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,

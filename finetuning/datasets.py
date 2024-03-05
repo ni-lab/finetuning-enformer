@@ -181,9 +181,7 @@ class RefDataset(torch.utils.data.Dataset):
 
 
 class PairwiseDataset(torch.utils.data.Dataset):
-    def __init__(self, filepath: str, n_pairs: int, half_precision=False):
-        self.half_precision = half_precision
-
+    def __init__(self, filepath: str, n_pairs: int):
         data = np.load(filepath)
         self.genes = data["genes"]
         self.seqs = data["seqs"]
@@ -227,12 +225,6 @@ class PairwiseDataset(torch.utils.data.Dataset):
         seq1 = self.seq_idx_embedder[self.seqs[idx1]]
         seq2 = self.seq_idx_embedder[self.seqs[idx2]]
         z_diff = self.Z[idx1] - self.Z[idx2]
-
-        if self.half_precision:
-            seq1 = torch.tensor(seq1).half()
-            seq2 = torch.tensor(seq2).half()
-            z_diff = torch.tensor(z_diff).half()
-
         return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
 
 
