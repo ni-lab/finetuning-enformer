@@ -24,9 +24,10 @@ def parse_args():
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--n_pairs_per_gene", type=int, default=1000)
+    parser.add_argument("--train_n_pairs_per_gene", type=int, default=500)
+    parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
-    parser.add_argument("--max_epochs", type=int, default=20)
+    parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     return parser.parse_args()
@@ -37,12 +38,12 @@ def main():
 
     pairwise_train_ds = PairwiseRegressionH5Dataset(
         args.train_data_path,
-        n_pairs_per_gene=args.n_pairs_per_gene,
+        n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
     )
     pairwise_val_ds = PairwiseRegressionH5Dataset(
         args.val_data_path,
-        n_pairs_per_gene=args.n_pairs_per_gene,
+        n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
     )
 
