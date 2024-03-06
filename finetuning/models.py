@@ -610,8 +610,11 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
                     dl_batch["z_diff"].float(),
                 )
                 X = torch.cat([X1, X2], dim=0)
-                X = rearrange(X, "S H L -> (S H) L")
-                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")  # (S * H, L, 4)
                 Y_hat = self(X)
                 Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
                 mse_loss = self.mse_loss(Y_hat, Y)
@@ -650,200 +653,11 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
                 batch["z_diff"].float(),
             )
             X = torch.cat([X1, X2], dim=0)
-            X = rearrange(X, "S H L -> (S H) L")
-            X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
-            Y_hat = self(X)
-            Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
-            mse_loss = self.mse_loss(Y_hat, Y)
-            self.log("val/pairwise_mse_loss", mse_loss, sync_dist=True, on_epoch=True)
-
-        elif dataloader_idx == 1:  # this is the original human training data
-            X, Y = batch["seq"], batch["y"]
-            Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
-            poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log(
-                "val/human_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
-            )
-            Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-            Y = Y.reshape(-1, Y.shape[-1])
-            self.human_metrics["r2_score"](Y_hat, Y)
-            self.log(
-                "val/human_r2_score",
-                self.human_metrics["r2_score"],
-                sync_dist=True,
-                on_epoch=True,
-            )
-
-        elif dataloader_idx == 2:  # this is the original mouse training data
-            X, Y = batch["seq"], batch["y"]
-            Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
-            poisson_loss = self.poisson_loss(Y_hat, Y)
-            self.log(
-                "val/mouse_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
-            )
-            Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-            Y = Y.reshape(-1, Y.shape[-1])
-            self.mouse_metrics["r2_score"](Y_hat, Y)
-            self.log(
-                "val/mouse_r2_score",
-                self.mouse_metrics["r2_score"],
-                sync_dist=True,
-                on_epoch=True,
-            )
-
-        else:
-            raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, self.parameters()),
-            lr=self.hparams.lr,
-        )
-        return optimizer
-
-
-class PairwiseWithOriginalDataJointTrainingHalfPrecision(L.LightningModule):
-    def __init__(
-        self,
-        lr: float,
-        n_total_bins: int,
-        avg_center_n_bins: int = 10,
-        checkpoint=None,
-        state_dict_subset_prefix=None,
-    ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
-
-        enformer_hidden_dim = 2 * self.base.dim
-        self.attention_pool = AttentionPool(enformer_hidden_dim)
-        self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
-        self.mse_loss = nn.MSELoss()
-        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
-
-        self.center_start = (n_total_bins - avg_center_n_bins) // 2
-        self.center_end = self.center_start + avg_center_n_bins
-
-        self.human_metrics = nn.ModuleDict(
-            {
-                "r2_score": R2Score(num_outputs=5313),
-            }
-        )
-        self.mouse_metrics = nn.ModuleDict(
-            {
-                "r2_score": R2Score(num_outputs=1643),
-            }
-        )
-
-    def forward(
-        self,
-        X,
-        return_base_predictions: bool = False,
-        base_predictions_head: str = None,
-    ):
-        """
-        X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
-        """
-        if not return_base_predictions:
             if X.shape[-1] != 4:
-                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
-            X = self.base(
-                X,
-                return_only_embeddings=True,
-                target_length=self.hparams.n_total_bins,
-            )  # (S * H, n_total_bins, enformer_hidden_dim)
-
-            assert X.shape[1] == self.hparams.n_total_bins
-            X = X[:, self.center_start : self.center_end, :]
-            X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
-            Y = self.prediction_head(X)  # (S * H, 1)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
-            return Y
-        else:
-            Y = self.base(X, head=base_predictions_head, target_length=896)
-
-        return Y
-
-    def training_step(self, batch, batch_idx):
-        total_loss = 0.0
-
-        for i, dl_batch in enumerate(batch):
-            loss = 0.0
-
-            if i == 0:  # this is the pairwise data
-                X1, X2, Y = (
-                    dl_batch["seq1"],
-                    dl_batch["seq2"],
-                    dl_batch["z_diff"].half(),
-                )
-                X = torch.cat([X1, X2], dim=0)
                 X = rearrange(X, "S H L -> (S H) L")
-                X = seq_indices_to_one_hot(X).half()  # (S * H, L, 4)
-                Y_hat = self(X)
-                Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
-                mse_loss = self.mse_loss(Y_hat, Y)
-                self.log("train/pairwise_mse_loss", mse_loss)
-                loss += mse_loss
-            elif i == 1:  # this is the original human training data
-                X, Y = dl_batch["seq"], dl_batch["y"]
-                Y_hat = self(
-                    X, return_base_predictions=True, base_predictions_head="human"
-                )
-                poisson_loss = self.poisson_loss(Y_hat, Y)
-                self.log("train/human_poisson_loss", poisson_loss)
-                loss += poisson_loss
-            elif i == 2:  # this is the original mouse training data
-                X, Y = dl_batch["seq"], dl_batch["y"]
-                Y_hat = self(
-                    X, return_base_predictions=True, base_predictions_head="mouse"
-                )
-                poisson_loss = self.poisson_loss(Y_hat, Y)
-                self.log("train/mouse_poisson_loss", poisson_loss)
-                loss += poisson_loss
+                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
             else:
-                raise ValueError(f"Invalid number of dataloaders: {i+1}")
-
-            total_loss += loss
-
-        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
-        self.log("train/total_loss", total_loss)
-        return total_loss
-
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        if dataloader_idx == 0:  # this is the pairwise data
-            X1, X2, Y = (
-                batch["seq1"],
-                batch["seq2"],
-                batch["z_diff"].half(),
-            )
-            X = torch.cat([X1, X2], dim=0)
-            X = rearrange(X, "S H L -> (S H) L")
-            X = seq_indices_to_one_hot(X).half()  # (S * H, L, 4)
+                X = rearrange(X, "S H L NC -> (S H) L NC")  # (S * H, L, 4)
             Y_hat = self(X)
             Y_hat = Y_hat[: X1.shape[0]] - Y_hat[X1.shape[0] :]
             mse_loss = self.mse_loss(Y_hat, Y)
