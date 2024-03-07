@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--train_n_pairs_per_gene", type=int, default=500)
+    parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
     parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--max_epochs", type=int, default=50)
