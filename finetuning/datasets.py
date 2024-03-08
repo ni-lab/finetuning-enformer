@@ -288,13 +288,13 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         h5_path: str,
         n_pairs_per_gene: int,
         seqlen: int,
-        prefetch_seqs: bool = True,
+        prefetch_seqs: bool = False,
         random_seed: int = 42,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
-        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
-        We recommend setting this to False only if you are trying to debug.
+        very slow (~15 minutes for the training set of h5_bins_384), but speeds up __getitem__.
+        We recommend setting this to True only if you have a lot of memory (> 200GB per process).
         """
         super().__init__()
         assert seqlen % 128 == 0
@@ -378,13 +378,13 @@ class PairwiseClassifcationH5Dataset(torch.utils.data.Dataset):
         n_pairs_per_gene: int,
         seqlen: int,
         min_percentile_diff: float = 25.0,
-        prefetch_seqs: bool = True,
+        prefetch_seqs: bool = False,
         random_seed: int = 42,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
-        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
-        We recommend setting this to False only if you are trying to debug.
+        very slow (~15 minutes for the training set of h5_bins_384), but speeds up __getitem__.
+        We recommend setting this to True only if you have a lot of memory (> 200GB per process).
         """
         super().__init__()
         assert seqlen % 128 == 0
