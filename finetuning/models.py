@@ -1165,12 +1165,36 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 Y1_hat, Y2_hat
             )
             loss = self.classification_loss(skellum_prob, Y)
+            self.log(
+                "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
+            )
             self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y)
             self.pairwise_classification_metrics["Precision"](skellum_prob, Y)
             self.pairwise_classification_metrics["Recall"](skellum_prob, Y)
             self.pairwise_classification_metrics["AUROC"](skellum_prob, Y)
             self.log(
-                "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
+                "val/pairwise_accuracy",
+                self.pairwise_classification_metrics["Accuracy"],
+                sync_dist=True,
+                on_epoch=True,
+            )
+            self.log(
+                "val/pairwise_precision",
+                self.pairwise_classification_metrics["Precision"],
+                sync_dist=True,
+                on_epoch=True,
+            )
+            self.log(
+                "val/pairwise_recall",
+                self.pairwise_classification_metrics["Recall"],
+                sync_dist=True,
+                on_epoch=True,
+            )
+            self.log(
+                "val/pairwise_auroc",
+                self.pairwise_classification_metrics["AUROC"],
+                sync_dist=True,
+                on_epoch=True,
             )
 
         elif dataloader_idx == 1:  # this is the original human training data
