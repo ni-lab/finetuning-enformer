@@ -1089,7 +1089,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         Y2 = 2 * torch.sqrt(Y2 + 3 / 8)
 
         normal_approx_mean = Y1 - Y2
-        normal_approx_std = torch.sqrt(2)
+        normal_approx_std = torch.sqrt(2.0)
         skellum_prob = 1.0 - torch.special.ndtr(normal_approx_mean / normal_approx_std)
         return skellum_prob
 
