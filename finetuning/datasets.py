@@ -59,7 +59,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         else:
             self.seqs = self.h5_file["seqs"]
         assert self.seqs.shape[2] >= self.seqlen
-        self.Y = self.h5_file["Y"][:]
+        self.Y = self.h5_file["Y"][:].astype(np.float32)
         self.Z = self.h5_file["Z"][:]
         self.percentiles = self.h5_file["P"][:]
 
