@@ -34,7 +34,7 @@ class SampleDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         seq = self.seq_idx_embedder[self.seqs[idx]]
-        y = np.max(self.Y[idx], 0)
+        y = max(self.Y[idx], 0.0)
         return {"seq": seq, "y": y}
 
 
@@ -59,7 +59,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         else:
             self.seqs = self.h5_file["seqs"]
         assert self.seqs.shape[2] >= self.seqlen
-        self.Y = self.h5_file["Y"][:].astype(np.float32)
+        self.Y = self.h5_file["Y"][:]
         self.Z = self.h5_file["Z"][:]
         self.percentiles = self.h5_file["P"][:]
 
@@ -90,7 +90,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         seq = self.__shorten_seq(self.seqs[idx]).astype(np.float32)
-        y = np.max(self.Y[idx], 0.0)
+        y = max(self.Y[idx], 0.0)
         return {"seq": seq, "y": y}
 
 
