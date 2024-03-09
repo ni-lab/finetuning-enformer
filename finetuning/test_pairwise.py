@@ -69,9 +69,7 @@ def main():
                         "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
                     )
 
-    if isinstance(
-        model, PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
-    ):
+    if args.test_data_path.endswith(".h5"):
         test_ds = SampleH5Dataset(args.test_data_path, seqlen=args.seqlen)
     else:
         test_ds = SampleDataset(args.test_data_path)
