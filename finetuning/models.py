@@ -575,11 +575,15 @@ class PairwiseWithOriginalDataJointTrainingFloatPrecision(L.LightningModule):
         base_predictions_head: str = None,
     ):
         """
-        X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
         """
         if not return_base_predictions:
             if X.shape[-1] != 4:
-                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                X = seq_indices_to_one_hot(
+                    X
+                )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
             X = self.base(
                 X,
                 return_only_embeddings=True,
@@ -786,12 +790,16 @@ class PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision(
         base_predictions_head: str = None,
     ):
         """
-        X (tensor): (sample * haplotype, length, 4) or (sample, length, 4)
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
         """
         if not return_base_predictions:
-            if not return_mpra_predictions:
+            if not return_base_predictions:
                 if X.shape[-1] != 4:
-                    X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                    X = seq_indices_to_one_hot(
+                        X
+                    )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+                if len(X.shape) == 4:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
                 X = self.base(
                     X,
                     return_only_embeddings=True,
@@ -1052,11 +1060,15 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         base_predictions_head: str = None,
     ):
         """
-        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4)
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
         """
         if not return_base_predictions:
             if X.shape[-1] != 4:
-                X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                X = seq_indices_to_one_hot(
+                    X
+                )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
             X = self.base(
                 X,
                 head=self.pairwise_output_head_name,

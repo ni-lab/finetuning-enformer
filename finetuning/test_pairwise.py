@@ -1,19 +1,24 @@
 import os
+import pdb
 from argparse import ArgumentParser
 
 import numpy as np
 import torch
-from datasets import RefDataset, SampleDataset
-from models import PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision
+from datasets import RefDataset, SampleDataset, SampleH5Dataset
+from models import (
+    PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
+    PairwiseFinetuned,
+    PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision,
+    PairwiseWithOriginalDataJointTrainingFloatPrecision)
 from tqdm import tqdm
-import pdb
+
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("checkpoint_path", type=str)
-    parser.add_argument("ref_data_path", type=str)
     parser.add_argument("test_data_path", type=str)
     parser.add_argument("predictions_dir", type=str)
+    parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=32)
     return parser.parse_args()
 
@@ -34,26 +39,46 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    ref_ds = RefDataset(args.ref_data_path)
-    test_ds = SampleDataset(args.test_data_path)
-    ref_dl = torch.utils.data.DataLoader(
-        ref_ds, batch_size=args.batch_size, shuffle=False, num_workers=1
-    )
-    test_dl = torch.utils.data.DataLoader(
-        test_ds, batch_size=args.batch_size, shuffle=False, num_workers=1
-    )
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    device = torch.device("cuda")
     try:
         model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path).to(device)
     except:
-        model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(args.checkpoint_path).to(device)
+        try:
+            model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                args.checkpoint_path
+            ).to(
+                device
+            )
+        except:
+            try:
+                model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
+                    args.checkpoint_path
+                ).to(
+                    device
+                )
+            except:
+                try:
+                    model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                        args.checkpoint_path
+                    ).to(
+                        device
+                    )
+                except:
+                    raise ValueError(
+                        "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
+                    )
 
-    # Predict on reference sequences
-    ref_preds = predict(model, ref_dl, device)
-    assert ref_preds.size == ref_ds.genes.size
-    ref_output_path = os.path.join(args.predictions_dir, "ref_preds.npz")
-    np.savez(ref_output_path, preds=ref_preds, genes=ref_ds.genes)
+    if isinstance(
+        model, PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
+    ):
+        test_ds = SampleH5Dataset(args.test_data_path, seqlen=args.seqlen)
+    else:
+        test_ds = SampleDataset(args.test_data_path)
+
+    test_dl = torch.utils.data.DataLoader(
+        test_ds, batch_size=args.batch_size, shuffle=False
+    )
 
     # Predict on test sample sequences
     test_preds = predict(model, test_dl, device)

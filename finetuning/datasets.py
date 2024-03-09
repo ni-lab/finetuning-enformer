@@ -39,11 +39,11 @@ class SampleDataset(torch.utils.data.Dataset):
 
 
 class SampleH5Dataset(torch.utils.data.Dataset):
-    def __init__(self, h5_path: str, seqlen: int, prefetch_seqs: bool = True):
+    def __init__(self, h5_path: str, seqlen: int, prefetch_seqs: bool = False):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
-        very slow (~15 minutes for the training set of h5_bins_384), but greatly speeds up __getitem__.
-        We recommend setting this to False only if you are trying to debug.
+        very slow (~15 minutes for the training set of h5_bins_384), but speeds up __getitem__.
+        We recommend setting this to True only if you have a lot of memory (> 200GB per process).
         """
         super().__init__()
         assert seqlen % 128 == 0
