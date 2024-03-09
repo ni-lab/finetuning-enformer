@@ -76,7 +76,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         return self.seqlen // 128
 
     def __len__(self):
-        return self.pairs.shape[0]
+        return self.seqs.shape[0]
 
     def __shorten_seq(self, seq):
         """
