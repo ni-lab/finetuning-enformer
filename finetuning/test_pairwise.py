@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument("test_data_path", type=str)
     parser.add_argument("predictions_dir", type=str)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size", type=int, default=8)
     return parser.parse_args()
 
 
