@@ -1103,7 +1103,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
 
         normal_approx_mean = Y1 - Y2
         normal_approx_std = np.sqrt(2.0)
-        skellum_prob = 1.0 - torch.special.ndtr(normal_approx_mean / normal_approx_std)
+        skellum_prob = 1.0 - torch.special.ndtr(-normal_approx_mean / normal_approx_std)
         return skellum_prob
 
     def training_step(self, batch, batch_idx):
