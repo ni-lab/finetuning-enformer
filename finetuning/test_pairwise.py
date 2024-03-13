@@ -40,30 +40,22 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
     try:
-        model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path).to(device)
+        model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path)
     except:
         try:
             model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
                 args.checkpoint_path
-            ).to(
-                device
             )
         except:
             try:
                 model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
                     args.checkpoint_path
-                ).to(
-                    device
                 )
             except:
                 try:
                     model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
                         args.checkpoint_path
-                    ).to(
-                        device
                     )
                 except:
                     raise ValueError(
@@ -98,6 +90,10 @@ def main():
             [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
         )
     else:
+        device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+        model.to(device)
         test_preds = predict(model, test_dl, device)
 
     assert test_preds.size == test_ds.genes.size
