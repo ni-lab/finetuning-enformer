@@ -62,11 +62,12 @@ def main():
             strategy="ddp",
         )
 
-        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
-            args.checkpoint_path
+        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
+            lr=0,
+            n_total_bins=test_ds.get_total_n_bins(),
         )
 
-        predictions = trainer.predict(model, test_dl)
+        predictions = trainer.predict(model, test_dl, ckpt_path=args.checkpoint_path)
         test_preds = np.concatenate(
             [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
         )
