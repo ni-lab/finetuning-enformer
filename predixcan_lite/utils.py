@@ -4,7 +4,7 @@ from typing import Optional
 
 import pandas as pd
 from genomic_utils.variant import Variant
-
+from snphwe import snphwe
 
 GEUVADIS_GENOTYPES_DIR = "/data/yosef3/scratch/ruchir/data/geuvadis/genotypes"
 
@@ -89,24 +89,23 @@ def filter_common(genotype_matrix: pd.DataFrame, maf: float = 0.05):
 def filter_hwe(genotype_matrix: pd.DataFrame, min_pvalue: float = 0.05):
     AC = genotype_matrix.applymap(convert_to_dosage)
     AN = genotype_matrix.applymap(count_total_alleles)
-    
-    assert not (AN == 1).any().any()
-    
+
+    assert not (AN == 1).any().any()  # Nothing should be on a sex chromosome
+
     n_homo_refs = ((AC == 0) & (AN == 2)).sum(axis=1)
     n_homo_alts = ((AC == 2) & (AN == 2)).sum(axis=1)
     n_hets = ((AC == 1) & (AN == 2)).sum(axis=1)
-    
-    hwe_df = pd.DataFrame({
-        "n_homo_ref": n_homo_refs,
-        "n_homo_alt": n_homo_alts,
-        "n_het": n_hets
-    })
-    
+
+    hwe_df = pd.DataFrame(
+        {"n_homo_ref": n_homo_refs, "n_homo_alt": n_homo_alts, "n_het": n_hets}
+    )
+
     hwe_df["hwe_p"] = [
         snphwe(n_het, n_homo_ref, n_homo_alt)
-        for (n_homo_ref, n_homo_alt, n_het)
-        in zip(hwe_df["n_homo_ref"], hwe_df["n_homo_alt"], hwe_df["n_het"])
+        for (n_homo_ref, n_homo_alt, n_het) in zip(
+            hwe_df["n_homo_ref"], hwe_df["n_homo_alt"], hwe_df["n_het"]
+        )
     ]
-    
+
     hwe_variants = hwe_df[hwe_df >= min_pvalue].index
     return genotype_matrix.loc[hwe_variants]
