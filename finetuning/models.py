@@ -1246,6 +1246,65 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         else:
             raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:
+            if "seq1" in batch and "seq2" in batch:  # this is the pairwise data
+                X1, X2 = batch["seq1"], batch["seq2"]
+                X = torch.cat([X1, X2], dim=0)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
+                Y_hat = self(X)
+                Y1_hat = Y_hat[: X1.shape[0]]
+                Y2_hat = Y_hat[X1.shape[0] :]
+                skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
+                    Y1_hat, Y2_hat
+                )
+                if "Y" in batch:
+                    Y = batch["Y"].float()
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "skellum_prob": skellum_prob,
+                        "Y": Y,
+                    }
+                else:
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "skellum_prob": skellum_prob,
+                    }
+            elif "seq" in batch:  # this is the individual sample data
+                X = batch["seq"]
+                Y_hat = self(X)
+                if "Y" in batch:
+                    Y = batch["Y"].float()
+                    return {"Y_hat": Y_hat, "Y": Y}
+                else:
+                    return {"Y_hat": Y_hat}
+            else:
+                raise ValueError("Invalid batch")
+
+        elif dataloader_idx == 1:  # this is the original human training data
+            X = batch["seq"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
+            if "Y" in batch:
+                Y = batch["Y"]
+                return {"Y_hat": Y_hat, "Y": Y}
+            else:
+                return Y_hat
+
+        elif dataloader_idx == 2:  # this is the original mouse training data
+            X = batch["seq"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
+            if "Y" in batch:
+                Y = batch["Y"]
+                return {"Y_hat": Y_hat, "Y": Y}
+            else:
+                return Y_hat
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),

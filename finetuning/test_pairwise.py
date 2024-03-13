@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 import numpy as np
 import torch
 from datasets import RefDataset, SampleDataset, SampleH5Dataset
+from lightning import Trainer
 from models import (
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseFinetuned,
@@ -79,7 +80,32 @@ def main():
     )
 
     # Predict on test sample sequences
-    test_preds = predict(model, test_dl, device)
+    if isinstance(
+        model, PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
+    ):  # this model has an inbuilt predict step
+        os.environ["SLURM_JOB_NAME"] = "interactive"
+        # get number of gpus
+        n_gpus = torch.cuda.device_count()
+        print(f"Number of GPUs: {n_gpus}")
+        trainer = Trainer(
+            accelerator="gpu",
+            devices="auto",
+            log_every_n_steps=10,
+            max_epochs=args.max_epochs,
+            gradient_clip_val=0.2,
+            precision="32-true",
+            accumulate_grad_batches=(
+                64 // (args.batch_size * n_gpus)
+            ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
+            strategy="ddp",
+        )
+        predictions = trainer.predict(model, test_dl)
+        test_preds = np.concatenate(
+            [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
+        )
+    else:
+        test_preds = predict(model, test_dl, device)
+
     assert test_preds.size == test_ds.genes.size
     test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
     np.savez(
