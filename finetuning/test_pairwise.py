@@ -50,9 +50,7 @@ def main():
     )
 
     # Predict on test sample sequences
-    if args.test_data_path.endswith(".h5") and (
-        "classification" in args.checkpoint_path
-    ):  # this model has an inbuilt predict step
+    try:  # this model has an inbuilt predict step
         os.environ["SLURM_JOB_NAME"] = "interactive"
         # get number of gpus
         n_gpus = torch.cuda.device_count()
@@ -73,7 +71,7 @@ def main():
         test_preds = np.concatenate(
             [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
         )
-    else:
+    except:
         device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
