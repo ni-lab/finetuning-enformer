@@ -62,27 +62,9 @@ def main():
             strategy="ddp",
         )
 
-        try:
-            model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path)
-        except:
-            try:
-                model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
-                    args.checkpoint_path
-                )
-            except:
-                try:
-                    model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
-                        args.checkpoint_path
-                    )
-                except:
-                    try:
-                        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
-                            args.checkpoint_path
-                        )
-                    except:
-                        raise ValueError(
-                            "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
-                        )
+        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+            args.checkpoint_path
+        )
 
         predictions = trainer.predict(model, test_dl)
         test_preds = np.concatenate(
