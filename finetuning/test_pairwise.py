@@ -90,13 +90,7 @@ def main():
         trainer = Trainer(
             accelerator="gpu",
             devices="auto",
-            log_every_n_steps=10,
-            max_epochs=args.max_epochs,
-            gradient_clip_val=0.2,
             precision="32-true",
-            accumulate_grad_batches=(
-                64 // (args.batch_size * n_gpus)
-            ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
             strategy="ddp",
         )
         predictions = trainer.predict(model, test_dl)
