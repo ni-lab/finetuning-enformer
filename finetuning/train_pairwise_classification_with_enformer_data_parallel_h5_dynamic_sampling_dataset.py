@@ -3,7 +3,8 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
-from datasets import EnformerDataset, PairwiseClassificationH5Dataset
+from datasets import (EnformerDataset, PairwiseClassificationH5Dataset,
+                      PairwiseClassificationH5DatasetDynamicSampling)
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
@@ -39,7 +40,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    pairwise_train_ds = PairwiseClassificationH5Dataset(
+    pairwise_train_ds = PairwiseClassificationH5DatasetDynamicSampling(
         args.train_data_path,
         n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
