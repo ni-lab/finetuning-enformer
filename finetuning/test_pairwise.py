@@ -40,28 +40,6 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    try:
-        model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path)
-    except:
-        try:
-            model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
-                args.checkpoint_path
-            )
-        except:
-            try:
-                model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
-                    args.checkpoint_path
-                )
-            except:
-                try:
-                    model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
-                        args.checkpoint_path
-                    )
-                except:
-                    raise ValueError(
-                        "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
-                    )
-
     if args.test_data_path.endswith(".h5"):
         test_ds = SampleH5Dataset(args.test_data_path, seqlen=args.seqlen)
     else:
@@ -72,9 +50,7 @@ def main():
     )
 
     # Predict on test sample sequences
-    if isinstance(
-        model, PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
-    ):  # this model has an inbuilt predict step
+    if args.test_data_path.endswith(".h5"):  # this model has an inbuilt predict step
         os.environ["SLURM_JOB_NAME"] = "interactive"
         # get number of gpus
         n_gpus = torch.cuda.device_count()
@@ -85,6 +61,29 @@ def main():
             precision="32-true",
             strategy="ddp",
         )
+
+        try:
+            model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path)
+        except:
+            try:
+                model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                    args.checkpoint_path
+                )
+            except:
+                try:
+                    model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
+                        args.checkpoint_path
+                    )
+                except:
+                    try:
+                        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                            args.checkpoint_path
+                        )
+                    except:
+                        raise ValueError(
+                            "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
+                        )
+
         predictions = trainer.predict(model, test_dl)
         test_preds = np.concatenate(
             [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
@@ -93,6 +92,29 @@ def main():
         device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
+
+        try:
+            model = PairwiseFinetuned.load_from_checkpoint(args.checkpoint_path)
+        except:
+            try:
+                model = PairwiseWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                    args.checkpoint_path
+                )
+            except:
+                try:
+                    model = PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision.load_from_checkpoint(
+                        args.checkpoint_path
+                    )
+                except:
+                    try:
+                        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision.load_from_checkpoint(
+                            args.checkpoint_path
+                        )
+                    except:
+                        raise ValueError(
+                            "Invalid model checkpoint path - must be one of PairwiseFinetuned, PairwiseWithOriginalDataJointTrainingFloatPrecision, PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision, or PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision."
+                        )
+
         model.to(device)
         test_preds = predict(model, test_dl, device)
 
