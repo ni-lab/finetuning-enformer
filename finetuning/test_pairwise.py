@@ -123,7 +123,10 @@ def main():
             p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
             preds.append(p_yhat)
 
-            bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))
+            bi = torch.load(
+                os.path.join(args.predictions_dir, f"batch_indices_{i}.pt")
+            )[0]
+            bi = np.concatenate(inds for inds in bi)
             batch_indices.append(bi)
 
         test_preds = np.concatenate(preds, axis=0)
