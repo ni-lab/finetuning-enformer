@@ -9,7 +9,8 @@ from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
-from models import PairwiseWithOriginalDataJointTrainingFloatPrecision
+from models import \
+    PairwiseWithOriginalDataJointTrainingAndEmbeddingLossFloatPrecision
 
 torch.manual_seed(97)
 torch.set_float32_matmul_precision("medium")
@@ -134,7 +135,7 @@ def main():
         strategy="ddp",
     )
 
-    model = PairwiseWithOriginalDataJointTrainingFloatPrecision(
+    model = PairwiseWithOriginalDataJointTrainingAndEmbeddingLossFloatPrecision(
         lr=args.lr,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,

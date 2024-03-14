@@ -120,7 +120,7 @@ def main():
     early_stopping_cb = EarlyStopping(
         monitor="val/pairwise_classification_loss/dataloader_idx_0",
         mode="min",
-        patience=5,
+        patience=3,
     )
 
     os.environ["SLURM_JOB_NAME"] = "interactive"
