@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
+    parser.add_argument("--data_seed", type=int, default=42)
     return parser.parse_args()
 
 
@@ -43,6 +44,7 @@ def main():
         args.train_data_path,
         n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
+        random_seed=args.data_seed,
     )
     pairwise_val_ds = PairwiseClassificationH5Dataset(
         args.val_data_path,
@@ -104,7 +106,9 @@ def main():
     ]
 
     logger = WandbLogger(
-        project="enformer-finetune", name=args.run_name, save_dir=args.save_dir
+        project="enformer-finetune",
+        name=args.run_name + f"_data_seed_{args.data_seed}",
+        save_dir=args.save_dir,
     )
 
     checkpointing_cb = ModelCheckpoint(
