@@ -6,12 +6,34 @@ import numpy as np
 import torch
 from datasets import RefDataset, SampleDataset, SampleH5Dataset
 from lightning import Trainer
+from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseFinetuned,
     PairwiseWithOriginalDataJointTrainingAndPairwiseMPRAFloatPrecision,
     PairwiseWithOriginalDataJointTrainingFloatPrecision)
 from tqdm import tqdm
+
+
+class CustomWriter(BasePredictionWriter):
+    def __init__(self, output_dir, write_interval):
+        super().__init__(write_interval)
+        self.output_dir = output_dir
+
+    def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
+        # this will create N (num processes) files in `output_dir` each containing
+        # the predictions of it's respective rank
+        torch.save(
+            predictions,
+            os.path.join(self.output_dir, f"predictions_{trainer.global_rank}.pt"),
+        )
+
+        # optionally, you can also save `batch_indices` to get the information about the data index
+        # from your prediction data
+        torch.save(
+            batch_indices,
+            os.path.join(self.output_dir, f"batch_indices_{trainer.global_rank}.pt"),
+        )
 
 
 def parse_args():
@@ -55,22 +77,41 @@ def main():
         # get number of gpus
         n_gpus = torch.cuda.device_count()
         print(f"Number of GPUs: {n_gpus}")
+        pred_writer = CustomWriter(
+            output_dir=args.predictions_dir, write_interval="epoch"
+        )
         trainer = Trainer(
             accelerator="gpu",
             devices="auto",
             precision="32-true",
             strategy="ddp",
+            callbacks=[pred_writer],
         )
 
         model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             lr=0,
             n_total_bins=test_ds.get_total_n_bins(),
         )
-
-        predictions = trainer.predict(model, test_dl, ckpt_path=args.checkpoint_path)
-        test_preds = np.concatenate(
-            [pred["Y_hat"].detach().cpu().numpy() for pred in predictions]
+        trainer.predict(
+            model, test_dl, ckpt_path=args.checkpoint_path, return_predictions=False
         )
+
+        # read predictions from the files and concatenate them
+        preds = []
+        batch_indices = []
+        for i in range(n_gpus):
+            preds.append(
+                torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
+            )
+            batch_indices.append(
+                torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))
+            )
+        test_preds = np.concatenate(preds, axis=0)
+        batch_indices = np.concatenate(batch_indices, axis=0)
+
+        # sort the predictions and batch_indices based on the original order
+        sorted_idxs = np.argsort(batch_indices)
+        test_preds = test_preds[sorted_idxs]
     except:
         device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
