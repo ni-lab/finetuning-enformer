@@ -108,16 +108,23 @@ def main():
             )
 
         # read predictions from the files and concatenate them
+        # only the first rank process will read the predictions and concatenate them
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            if torch.distributed.get_rank() != 0:
+                return
+        # wait for all processes to finish writing the predictions
+        torch.distributed.barrier()
+
         preds = []
         batch_indices = []
         for i in range(n_gpus):
             p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
-            p_yhat = p["y_hat"]
+            p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
             preds.append(p_yhat)
 
-            batch_indices.append(
-                torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))
-            )
+            bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))
+            batch_indices.append(bi)
+
         test_preds = np.concatenate(preds, axis=0)
         batch_indices = np.concatenate(batch_indices, axis=0)
 

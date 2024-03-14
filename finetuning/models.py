@@ -1279,8 +1279,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 Y_hat = self(X)
-                if "Y" in batch:
-                    Y = batch["Y"].float()
+                if "y" in batch:
+                    Y = batch["y"].float()
                     return {"Y_hat": Y_hat, "Y": Y}
                 else:
                     return {"Y_hat": Y_hat}
