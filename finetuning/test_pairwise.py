@@ -73,36 +73,48 @@ def main():
 
     # Predict on test sample sequences
     try:  # this model has an inbuilt predict step
-        os.environ["SLURM_JOB_NAME"] = "interactive"
         # get number of gpus
         n_gpus = torch.cuda.device_count()
-        print(f"Number of GPUs: {n_gpus}")
-        pred_writer = CustomWriter(
-            output_dir=args.predictions_dir, write_interval="epoch"
-        )
-        trainer = Trainer(
-            accelerator="gpu",
-            devices="auto",
-            precision="32-true",
-            strategy="ddp",
-            callbacks=[pred_writer],
-        )
+        # if all predictions exist, skip the prediction step
+        if all(
+            [
+                os.path.exists(
+                    os.path.join(args.predictions_dir, f"predictions_{i}.pt")
+                )
+                for i in range(n_gpus)
+            ]
+        ):
+            print("Predictions already exist, skipping prediction step.")
+        else:
+            os.environ["SLURM_JOB_NAME"] = "interactive"
+            print(f"Number of GPUs: {n_gpus}")
+            pred_writer = CustomWriter(
+                output_dir=args.predictions_dir, write_interval="epoch"
+            )
+            trainer = Trainer(
+                accelerator="gpu",
+                devices="auto",
+                precision="32-true",
+                strategy="ddp",
+                callbacks=[pred_writer],
+            )
 
-        model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
-            lr=0,
-            n_total_bins=test_ds.get_total_n_bins(),
-        )
-        trainer.predict(
-            model, test_dl, ckpt_path=args.checkpoint_path, return_predictions=False
-        )
+            model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
+                lr=0,
+                n_total_bins=test_ds.get_total_n_bins(),
+            )
+            trainer.predict(
+                model, test_dl, ckpt_path=args.checkpoint_path, return_predictions=False
+            )
 
         # read predictions from the files and concatenate them
         preds = []
         batch_indices = []
         for i in range(n_gpus):
-            preds.append(
-                torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
-            )
+            p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
+            p_yhat = p["y_hat"]
+            preds.append(p_yhat)
+
             batch_indices.append(
                 torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))
             )
