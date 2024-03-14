@@ -1441,7 +1441,7 @@ class PairwiseWithOriginalDataJointTrainingAndEmbeddingLossFloatPrecision(
                 flattened_embs = rearrange(embs, "S L D -> S (L D)")
                 emb1 = flattened_embs[: X1.shape[0]]
                 emb2 = flattened_embs[X1.shape[0] :]
-                distances = ((emb1 - emb2) ** 2.0).sum(dim=-1).sqrt()  # (S, )
+                distances = ((emb1 - emb2) ** 2.0).mean(dim=-1).sqrt()  # (S, )
                 # embedding distance should be proportional to the difference in the output
                 embedding_loss = self.mse_loss(distances, Y**2.0)
                 self.log("train/pairwise_embedding_loss", embedding_loss)
@@ -1496,7 +1496,7 @@ class PairwiseWithOriginalDataJointTrainingAndEmbeddingLossFloatPrecision(
             flattened_embs = rearrange(embs, "S L D -> S (L D)")
             emb1 = flattened_embs[: X1.shape[0]]
             emb2 = flattened_embs[X1.shape[0] :]
-            distances = ((emb1 - emb2) ** 2.0).sum(dim=-1).sqrt()
+            distances = ((emb1 - emb2) ** 2.0).mean(dim=-1).sqrt()
             embedding_loss = self.mse_loss(distances, Y**2.0)
             self.log(
                 "val/pairwise_embedding_loss",
