@@ -112,8 +112,9 @@ def main():
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             if torch.distributed.get_rank() != 0:
                 return
-        # wait for all processes to finish writing the predictions
-        torch.distributed.barrier()
+            else:
+                # wait for all processes to finish writing the predictions
+                torch.distributed.barrier()
 
         preds = []
         batch_indices = []
