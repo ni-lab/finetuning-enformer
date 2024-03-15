@@ -529,9 +529,10 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         end_idx = start_idx + self.seqlen
         return seq[:, start_idx:end_idx, :]
 
-    def __getitem__(self, idx):  # idx is ignored
-        random_gene = self.rng.choice(self.unique_genes)
-        gene_idxs = self.gene_to_idxs[random_gene]
+    def __getitem__(self, idx):
+        chosen_gene = idx % len(self.unique_genes)
+        chosen_gene = self.unique_genes[chosen_gene]
+        gene_idxs = self.gene_to_idxs[chosen_gene]
         percentile_diff = -1
         idx1, idx2 = None, None
         while percentile_diff <= self.min_percentile_diff:
