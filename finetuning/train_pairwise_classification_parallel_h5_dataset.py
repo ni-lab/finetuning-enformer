@@ -10,8 +10,7 @@ from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.utilities.combined_loader import CombinedLoader
-from models import \
-    PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
+from models import PairwiseClassificationFloatPrecision
 
 np.random.seed(97)
 torch.manual_seed(97)
@@ -51,20 +50,13 @@ def main():
         seqlen=args.seqlen,
     )
 
-    train_dl = CombinedLoader(
-        [
-            torch.utils.data.DataLoader(
-                pairwise_train_ds, batch_size=args.batch_size, shuffle=True
-            ),
-        ],
-        mode="max_size_cycle",
+    train_dl = torch.utils.data.DataLoader(
+        pairwise_train_ds, batch_size=args.batch_size, shuffle=True
     )
 
-    val_dl = [
-        torch.utils.data.DataLoader(
-            pairwise_val_ds, batch_size=args.batch_size, shuffle=False
-        ),
-    ]
+    val_dl = torch.utils.data.DataLoader(
+        pairwise_val_ds, batch_size=args.batch_size, shuffle=False
+    )
 
     logger = WandbLogger(
         project="enformer-finetune",
@@ -73,13 +65,13 @@ def main():
     )
 
     checkpointing_cb = ModelCheckpoint(
-        monitor="val/pairwise_classification_loss/dataloader_idx_0",
+        monitor="val/pairwise_classification_loss",
         mode="min",
         save_top_k=1,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/pairwise_classification_loss/dataloader_idx_0",
+        monitor="val/pairwise_classification_loss",
         mode="min",
         patience=3,
     )
@@ -104,7 +96,7 @@ def main():
         strategy="ddp",
     )
 
-    model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
+    model = PairwiseClassificationFloatPrecision(
         lr=args.lr,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,

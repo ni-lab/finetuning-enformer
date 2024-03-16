@@ -1311,3 +1311,233 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             lr=self.hparams.lr,
         )
         return optimizer
+
+
+class PairwiseClassificationFloatPrecision(L.LightningModule):
+    def __init__(
+        self,
+        lr: float,
+        n_total_bins: int,
+        sum_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+        pairwise_output_head_name="human",
+        pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+            self.base.load_state_dict(new_state_dict)
+
+        self.pairwise_output_head_name = pairwise_output_head_name
+        self.pairwise_output_head_ind = pairwise_output_head_ind
+        self.center_start = (n_total_bins - sum_center_n_bins) // 2
+        self.center_end = self.center_start + sum_center_n_bins
+
+        self.classification_loss = nn.BCELoss()
+
+        self.pairwise_classification_metrics = nn.ModuleDict(
+            {
+                "Accuracy": Accuracy("binary"),
+                "Precision": Precision("binary"),
+                "Recall": Recall("binary"),
+                "AUROC": AUROC("binary"),
+            }
+        )
+
+    def forward(
+        self,
+        X,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if not return_base_predictions:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(
+                    X
+                )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            X = self.base(
+                X,
+                head=self.pairwise_output_head_name,
+                target_length=self.hparams.n_total_bins,
+            )  # (S * H, n_total_bins, num_outputs)
+            assert X.shape[1] == self.hparams.n_total_bins
+
+            X = X[
+                :, :, self.pairwise_output_head_ind
+            ]  # get the selected output, (S * H, n_total_bins)
+            X = X[
+                :, self.center_start : self.center_end
+            ]  # get the center bins, (S * H, sum_center_n_bins)
+            X = X.sum(dim=1)  # sum the center bins, (S * H)
+            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+            Y = Y.mean(dim=1)  # (S)
+            return Y
+        else:
+            Y = self.base(X, head=base_predictions_head, target_length=896)
+
+        return Y
+
+    def compute_skellum_prob_after_anscombe_transform(self, Y1, Y2):
+        """
+        Here, Y1 and Y2 are assumed to follow the Poisson distribution.
+        This function computes the probability of Y1 > Y2 after the Anscombe transform.
+        Y1 (tensor): (sample, )
+        Y2 (tensor): (sample, )
+        """
+        Y1 = 2 * torch.sqrt(Y1 + 3 / 8)
+        Y2 = 2 * torch.sqrt(Y2 + 3 / 8)
+
+        normal_approx_mean = Y1 - Y2
+        normal_approx_std = np.sqrt(2.0)
+        skellum_prob = 1.0 - torch.special.ndtr(-normal_approx_mean / normal_approx_std)
+        return skellum_prob
+
+    def training_step(self, batch, batch_idx):
+        X1, X2, Y = (
+            batch["seq1"],
+            batch["seq2"],
+            batch["Y"].float(),
+        )
+        X = torch.cat([X1, X2], dim=0)
+        if X.shape[-1] != 4:
+            X = rearrange(X, "S H L -> (S H) L")
+            X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+        else:
+            X = rearrange(X, "S H L NC -> (S H) L NC")  # (S * H, L, 4)
+        Y_hat = self(X)
+        Y1_hat = Y_hat[: X1.shape[0]]
+        Y2_hat = Y_hat[X1.shape[0] :]
+        skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
+            Y1_hat, Y2_hat
+        )
+        total_loss = self.classification_loss(skellum_prob, Y)
+        self.log("train/pairwise_classification_loss", total_loss)
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        return total_loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        X1, X2, Y = (
+            batch["seq1"],
+            batch["seq2"],
+            batch["Y"].float(),
+        )
+        X = torch.cat([X1, X2], dim=0)
+        if X.shape[-1] != 4:
+            X = rearrange(X, "S H L -> (S H) L")
+            X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+        else:
+            X = rearrange(X, "S H L NC -> (S H) L NC")  # (S * H, L, 4)
+        Y_hat = self(X)
+        Y1_hat = Y_hat[: X1.shape[0]]
+        Y2_hat = Y_hat[X1.shape[0] :]
+        skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
+            Y1_hat, Y2_hat
+        )
+        loss = self.classification_loss(skellum_prob, Y)
+        self.log(
+            "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
+        )
+        self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y)
+        self.pairwise_classification_metrics["Precision"](skellum_prob, Y)
+        self.pairwise_classification_metrics["Recall"](skellum_prob, Y)
+        self.pairwise_classification_metrics["AUROC"](skellum_prob, Y)
+        self.log(
+            "val/pairwise_accuracy",
+            self.pairwise_classification_metrics["Accuracy"],
+            sync_dist=True,
+            on_epoch=True,
+        )
+        self.log(
+            "val/pairwise_precision",
+            self.pairwise_classification_metrics["Precision"],
+            sync_dist=True,
+            on_epoch=True,
+        )
+        self.log(
+            "val/pairwise_recall",
+            self.pairwise_classification_metrics["Recall"],
+            sync_dist=True,
+            on_epoch=True,
+        )
+        self.log(
+            "val/pairwise_auroc",
+            self.pairwise_classification_metrics["AUROC"],
+            sync_dist=True,
+            on_epoch=True,
+        )
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        if "seq1" in batch and "seq2" in batch:  # this is the pairwise data
+            X1, X2 = batch["seq1"], batch["seq2"]
+            X = torch.cat([X1, X2], dim=0)
+            if X.shape[-1] != 4:
+                X = rearrange(X, "S H L -> (S H) L")
+                X = seq_indices_to_one_hot(X)
+            else:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            Y_hat = self(X)
+            Y1_hat = Y_hat[: X1.shape[0]]
+            Y2_hat = Y_hat[X1.shape[0] :]
+            skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
+                Y1_hat, Y2_hat
+            )
+            if "Y" in batch:
+                Y = batch["Y"].float()
+                return {
+                    "Y1_hat": Y1_hat,
+                    "Y2_hat": Y2_hat,
+                    "skellum_prob": skellum_prob,
+                    "Y": Y,
+                }
+            else:
+                return {
+                    "Y1_hat": Y1_hat,
+                    "Y2_hat": Y2_hat,
+                    "skellum_prob": skellum_prob,
+                }
+        elif "seq" in batch:  # this is the individual sample data
+            X = batch["seq"]
+            Y_hat = self(X)
+            if "y" in batch:
+                Y = batch["y"].float()
+                return {"Y_hat": Y_hat, "Y": Y}
+            else:
+                return {"Y_hat": Y_hat}
+        else:
+            raise ValueError("Invalid batch")
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.parameters()),
+            lr=self.hparams.lr,
+        )
+        return optimizer
