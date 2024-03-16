@@ -1534,7 +1534,7 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
                 return {"Y_hat": Y_hat}
         else:
             raise ValueError("Invalid batch")
-
+            
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
