@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
-from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
+from flash.core.optimizers import LinearWarmupCosineAnnealingLR
 from torchmetrics import AUROC, Accuracy, Precision, R2Score, Recall
 
 
@@ -990,6 +990,9 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
     def __init__(
         self,
         lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
         n_total_bins: int,
         sum_center_n_bins: int = 10,
         checkpoint=None,
@@ -1306,10 +1309,26 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 return Y_hat
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, self.parameters()),
-            lr=self.hparams.lr,
-        )
+        if self.hparams.weight_decay is None:
+            optimizer = torch.optim.Adam(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            return {"optimizer": optimizer, "lr_scheduler": scheduler}
+
         return optimizer
 
 

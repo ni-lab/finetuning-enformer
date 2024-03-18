@@ -27,6 +27,9 @@ def parse_args():
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
+    parser.add_argument("--weight_decay", type=float, default=None)
+    parser.add_argument("--use_schedule", type=float, default=False)
+    parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
     parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
@@ -120,6 +123,8 @@ def main():
         patience=5,
     )
 
+    max_steps = args.max_epochs * (len(pairwise_train_ds) // args.batch_size)
+
     os.environ["SLURM_JOB_NAME"] = "interactive"
     # get number of gpus
     n_gpus = torch.cuda.device_count()
@@ -129,6 +134,7 @@ def main():
         devices="auto",
         log_every_n_steps=10,
         max_epochs=args.max_epochs,
+        max_steps=max_steps,
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
@@ -142,6 +148,9 @@ def main():
 
     model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         lr=args.lr,
+        weight_decay=args.weight_decay,
+        use_schedule=args.use_schedule,
+        warmup_steps=args.warmup_steps,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
