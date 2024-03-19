@@ -1119,7 +1119,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 X1, X2, Y = (
                     dl_batch["seq1"],
                     dl_batch["seq2"],
-                    dl_batch["Y"],
+                    dl_batch["Y"].float(),
                 )
                 X = torch.cat([X1, X2], dim=0)
                 if X.shape[-1] != 4:
@@ -1170,7 +1170,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             X1, X2, Y = (
                 batch["seq1"],
                 batch["seq2"],
-                batch["Y"],
+                batch["Y"].float(),
             )
             X = torch.cat([X1, X2], dim=0)
             if X.shape[-1] != 4:
@@ -1188,10 +1188,10 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             self.log(
                 "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
             )
-            self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y)
-            self.pairwise_classification_metrics["Precision"](skellum_prob, Y)
-            self.pairwise_classification_metrics["Recall"](skellum_prob, Y)
-            self.pairwise_classification_metrics["AUROC"](skellum_prob, Y)
+            self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y.long())
+            self.pairwise_classification_metrics["Precision"](skellum_prob, Y.long())
+            self.pairwise_classification_metrics["Recall"](skellum_prob, Y.long())
+            self.pairwise_classification_metrics["AUROC"](skellum_prob, Y.long())
             self.log(
                 "val/pairwise_accuracy",
                 self.pairwise_classification_metrics["Accuracy"],
@@ -1490,10 +1490,10 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         self.log(
             "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
         )
-        self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y)
-        self.pairwise_classification_metrics["Precision"](skellum_prob, Y)
-        self.pairwise_classification_metrics["Recall"](skellum_prob, Y)
-        self.pairwise_classification_metrics["AUROC"](skellum_prob, Y)
+        self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y.long())
+        self.pairwise_classification_metrics["Precision"](skellum_prob, Y.long())
+        self.pairwise_classification_metrics["Recall"](skellum_prob, Y.long())
+        self.pairwise_classification_metrics["AUROC"](skellum_prob, Y.long())
         self.log(
             "val/pairwise_accuracy",
             self.pairwise_classification_metrics["Accuracy"],
