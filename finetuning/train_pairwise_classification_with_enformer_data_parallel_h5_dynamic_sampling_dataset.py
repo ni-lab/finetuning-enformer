@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--weight_decay", type=float, default=None)
-    parser.add_argument("--use_schedule", action=BooleanOptionalAction, default=False)
+    parser.add_argument("--use_scheduler", action=BooleanOptionalAction, default=False)
     parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
@@ -159,7 +159,7 @@ def main():
     model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         lr=args.lr,
         weight_decay=args.weight_decay,
-        use_schedule=args.use_schedule,
+        use_scheduler=args.use_scheduler,
         warmup_steps=args.warmup_steps,
         n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
