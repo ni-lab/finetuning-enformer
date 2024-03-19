@@ -1119,7 +1119,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 X1, X2, Y = (
                     dl_batch["seq1"],
                     dl_batch["seq2"],
-                    dl_batch["Y"].float(),
+                    dl_batch["Y"],
                 )
                 X = torch.cat([X1, X2], dim=0)
                 if X.shape[-1] != 4:
@@ -1170,7 +1170,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             X1, X2, Y = (
                 batch["seq1"],
                 batch["seq2"],
-                batch["Y"].float(),
+                batch["Y"],
             )
             X = torch.cat([X1, X2], dim=0)
             if X.shape[-1] != 4:
@@ -1558,7 +1558,7 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
                 return {"Y_hat": Y_hat}
         else:
             raise ValueError("Invalid batch")
-            
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, self.parameters()),
