@@ -133,7 +133,7 @@ def main():
     # print hyperparameters
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
-    print(f"use_schedule: {args.use_schedule}")
+    print(f"use_scheduler: {args.use_scheduler}")
     print(f"warmup_steps: {args.warmup_steps}")
     print(f"batch_size: {args.batch_size}")
     print(f"max_epochs: {args.max_epochs}")
