@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--weight_decay", type=float, default=None)
-    parser.add_argument("--use_schedule", type=float, default=False)
+    parser.add_argument("--use_schedule", action=BooleanOptionalAction, default=False)
     parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
@@ -129,6 +129,16 @@ def main():
     # get number of gpus
     n_gpus = torch.cuda.device_count()
     print(f"Number of GPUs: {n_gpus}")
+
+    # print hyperparameters
+    print(f"lr: {args.lr}")
+    print(f"weight_decay: {args.weight_decay}")
+    print(f"use_schedule: {args.use_schedule}")
+    print(f"warmup_steps: {args.warmup_steps}")
+    print(f"batch_size: {args.batch_size}")
+    print(f"max_epochs: {args.max_epochs}")
+    print(f"imputed max_steps: {max_steps}")
+
     trainer = Trainer(
         accelerator="gpu",
         devices="auto",
