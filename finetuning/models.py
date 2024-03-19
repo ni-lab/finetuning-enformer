@@ -1157,6 +1157,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             total_loss += loss
 
         self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        if self.hparams.weight_decay is not None:
+            self.log(
+                "train/weight_decay",
+                self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+            )
         self.log("train/total_loss", total_loss)
         return total_loss
 
