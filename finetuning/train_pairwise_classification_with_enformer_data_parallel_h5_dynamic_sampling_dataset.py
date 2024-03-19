@@ -127,14 +127,13 @@ def main():
         patience=5,
     )
 
-    max_steps = args.max_epochs * (len(pairwise_train_ds) // args.batch_size)
-
     os.environ["SLURM_JOB_NAME"] = "interactive"
     # get number of gpus
     n_gpus = torch.cuda.device_count()
     print(f"Number of GPUs: {n_gpus}")
 
     # print hyperparameters
+    max_steps = args.max_epochs * (len(pairwise_train_ds) // (args.batch_size * n_gpus))
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
     print(f"use_scheduler: {args.use_scheduler}")
