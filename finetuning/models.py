@@ -1332,7 +1332,12 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 warmup_epochs=self.hparams.warmup_steps,
                 max_epochs=self.trainer.max_steps,
             )
-            return {"optimizer": optimizer, "lr_scheduler": scheduler}
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
 
         return optimizer
 
