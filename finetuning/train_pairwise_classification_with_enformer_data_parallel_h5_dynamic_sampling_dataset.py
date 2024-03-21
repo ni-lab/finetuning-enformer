@@ -112,13 +112,25 @@ def main():
         torch.utils.data.DataLoader(mouse_enformer_val_ds, batch_size=args.batch_size),
     ]
 
+    run_save_dir = os.path.join(
+        args.save_dir, args.run_name + f"_data_seed_{args.data_seed}"
+    )
+    os.makedirs(run_save_dir, exist_ok=True)
+
+    logs_dir = os.path.join(run_save_dir, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+
+    ckpts_dir = os.path.join(run_save_dir, "checkpoints")
+    os.makedirs(ckpts_dir, exist_ok=True)
+
     logger = WandbLogger(
         project="enformer-finetune",
         name=args.run_name + f"_data_seed_{args.data_seed}",
-        save_dir=args.save_dir,
+        save_dir=logs_dir,
     )
 
     checkpointing_cb = ModelCheckpoint(
+        dirpath=ckpts_dir,
         monitor="val/pairwise_classification_loss/dataloader_idx_0",
         mode="min",
         save_top_k=1,
@@ -174,19 +186,12 @@ def main():
 
     resume_flag = args.resume_from_checkpoint
     if args.resume_from_checkpoint:
-        if (
-            not os.path.exists(os.path.join(args.save_dir, "checkpoints"))
-            or len(os.listdir(os.path.join(args.save_dir, "checkpoints"))) == 0
-        ):
+        if len(os.listdir(ckpts_dir)) == 0:
             print("No checkpoint found to resume from. Training from scratch.")
             resume_flag = False
         else:
-            previous_ckpt_path = os.listdir(os.path.join(args.save_dir, "checkpoints"))[
-                0
-            ]
-            previous_ckpt_path = os.path.join(
-                args.save_dir, "checkpoints", previous_ckpt_path
-            )
+            previous_ckpt_path = os.listdir(ckpts_dir)[0]
+            previous_ckpt_path = os.path.join(ckpts_dir, previous_ckpt_path)
             print(f"Resuming from checkpoint: {previous_ckpt_path}")
             trainer.validate(model, dataloaders=val_dl, ckpt_path=previous_ckpt_path)
             trainer.fit(model, train_dl, val_dl, ckpt_path=previous_ckpt_path)
