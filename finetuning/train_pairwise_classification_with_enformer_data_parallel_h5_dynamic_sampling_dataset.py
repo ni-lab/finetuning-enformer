@@ -38,6 +38,9 @@ def parse_args():
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     parser.add_argument("--data_seed", type=int, default=42)
+    parser.add_argument(
+        "--resume_from_checkpoint", action=BooleanOptionalAction, default=False
+    )
     return parser.parse_args()
 
 
@@ -168,8 +171,30 @@ def main():
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
     )
-    trainer.validate(model, dataloaders=val_dl)
-    trainer.fit(model, train_dl, val_dl)
+
+    resume_flag = args.resume_from_checkpoint
+    if args.resume_from_checkpoint:
+        if (
+            not os.path.exists(os.path.join(args.save_dir, "checkpoints"))
+            or len(os.listdir(os.path.join(args.save_dir, "checkpoints"))) == 0
+        ):
+            print("No checkpoint found to resume from. Training from scratch.")
+            resume_flag = False
+        else:
+            previous_ckpt_path = os.listdir(os.path.join(args.save_dir, "checkpoints"))[
+                0
+            ]
+            previous_ckpt_path = os.path.join(
+                args.save_dir, "checkpoints", previous_ckpt_path
+            )
+            print(f"Resuming from checkpoint: {previous_ckpt_path}")
+            trainer.validate(model, dataloaders=val_dl, ckpt_path=previous_ckpt_path)
+            trainer.fit(model, train_dl, val_dl, ckpt_path=previous_ckpt_path)
+
+    if not resume_flag:
+        print("Training from scratch.")
+        trainer.validate(model, dataloaders=val_dl)
+        trainer.fit(model, train_dl, val_dl)
 
 
 if __name__ == "__main__":
