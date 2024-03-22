@@ -101,6 +101,9 @@ def main():
 
             model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 lr=0,
+                weight_decay=0,
+                use_scheduler=False,
+                warmup_steps=0,
                 n_total_bins=test_ds.get_total_n_bins(),
             )
             trainer.predict(
