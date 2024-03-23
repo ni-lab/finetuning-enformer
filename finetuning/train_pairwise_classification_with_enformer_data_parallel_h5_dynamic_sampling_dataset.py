@@ -148,7 +148,11 @@ def main():
     print(f"Number of GPUs: {n_gpus}")
 
     # print hyperparameters
-    max_steps = args.max_epochs * (len(pairwise_train_ds) // (args.batch_size * n_gpus))
+    # we accumulate gradients over 64 samples to match the original Enformer model's batch size
+    # commented out line shows the explicit calculation of max_steps
+    # max_steps = (args.max_epochs * (len(pairwise_train_ds) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
+    # simplified formula below
+    max_steps = args.max_epochs * (len(pairwise_train_ds) // 64)
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
     print(f"use_scheduler: {args.use_scheduler}")

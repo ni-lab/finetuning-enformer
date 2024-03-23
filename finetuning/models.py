@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchmetrics
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
@@ -994,6 +995,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         use_scheduler: bool,
         warmup_steps: int,
         n_total_bins: int,
+        pairwise_output_head_upweight_factor: float = 5312.0,  # this is so that the pairwise output is upweighted to have the same influence on the loss as the rest of the outputs
         sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
@@ -1036,25 +1038,44 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         self.classification_loss = nn.BCELoss()
         self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
 
-        self.pairwise_classification_metrics = nn.ModuleDict(
+        # self.pairwise_classification_metrics = nn.ModuleDict(
+        #     {
+        #         "Accuracy": Accuracy("binary"),
+        #         "Precision": Precision("binary"),
+        #         "Recall": Recall("binary"),
+        #         "AUROC": AUROC("binary"),
+        #     }
+        # )
+        # self.human_metrics = nn.ModuleDict(
+        #     {
+        #         "r2_score": R2Score(num_outputs=5313),
+        #     }
+        # )
+        # self.mouse_metrics = nn.ModuleDict(
+        #     {
+        #         "r2_score": R2Score(num_outputs=1643),
+        #     }
+        # )
+        # self.pairwise_output_head_metrics = nn.ModuleDict(
+        #     {
+        #         "pairwise_output_head_r2_score": R2Score(num_outputs=1),
+        #     }
+        # )
+
+        self.all_metrics = torchmetrics.MetricCollection(
             {
-                "Accuracy": Accuracy("binary"),
-                "Precision": Precision("binary"),
-                "Recall": Recall("binary"),
-                "AUROC": AUROC("binary"),
+                "pairwise_classification_accuracy": torchmetrics.Accuracy("binary"),
+                "pairwise_classification_precision": torchmetrics.Precision("binary"),
+                "pairwise_classification_recall": torchmetrics.Recall("binary"),
+                "pairwise_classification_auroc": torchmetrics.AUROC("binary"),
+                "human_r2_score": R2Score(num_outputs=5313),
+                "mouse_r2_score": R2Score(num_outputs=1643),
+                "pairwise_output_head_r2_score": R2Score(num_outputs=1),
             }
         )
 
-        self.human_metrics = nn.ModuleDict(
-            {
-                "r2_score": R2Score(num_outputs=5313),
-            }
-        )
-        self.mouse_metrics = nn.ModuleDict(
-            {
-                "r2_score": R2Score(num_outputs=1643),
-            }
-        )
+        self.train_metrics = self.all_metrics.clone(prefix="train/")
+        self.val_metrics = self.all_metrics.clone(prefix="val/")
 
     def forward(
         self,
@@ -1135,6 +1156,36 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 )
                 loss += self.classification_loss(skellum_prob, Y)
                 self.log("train/pairwise_classification_loss", loss)
+
+                self.train_metrics["pairwise_classification_accuracy"](skellum_prob, Y)
+                self.train_metrics["pairwise_classification_precision"](skellum_prob, Y)
+                self.train_metrics["pairwise_classification_recall"](skellum_prob, Y)
+                self.train_metrics["pairwise_classification_auroc"](skellum_prob, Y)
+                self.log(
+                    "train/pairwise_classification_accuracy",
+                    self.train_metrics["pairwise_classification_accuracy"],
+                    on_step=True,
+                    on_epoch=True,
+                )
+                self.log(
+                    "train/pairwise_classification_precision",
+                    self.train_metrics["pairwise_classification_precision"],
+                    on_step=True,
+                    on_epoch=True,
+                )
+                self.log(
+                    "train/pairwise_classification_recall",
+                    self.train_metrics["pairwise_classification_recall"],
+                    on_step=True,
+                    on_epoch=True,
+                )
+                self.log(
+                    "train/pairwise_classification_auroc",
+                    self.train_metrics["pairwise_classification_auroc"],
+                    on_step=True,
+                    on_epoch=True,
+                )
+
             elif i == 1:  # this is the original human training data
                 X, Y = dl_batch["seq"], dl_batch["y"]
                 Y_hat = self(
@@ -1143,6 +1194,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 poisson_loss = self.poisson_loss(Y_hat, Y)
                 self.log("train/human_poisson_loss", poisson_loss)
                 loss += poisson_loss
+
+                self.train_metrics["human_r2_score"](
+                    Y_hat, Y, on_step=True, on_epoch=True
+                )
+
             elif i == 2:  # this is the original mouse training data
                 X, Y = dl_batch["seq"], dl_batch["y"]
                 Y_hat = self(
@@ -1151,8 +1207,45 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 poisson_loss = self.poisson_loss(Y_hat, Y)
                 self.log("train/mouse_poisson_loss", poisson_loss)
                 loss += poisson_loss
+
             else:
                 raise ValueError(f"Invalid number of dataloaders: {i+1}")
+
+            # upweight the pairwise output head
+            if (i == 1 and self.pairwise_output_head_name == "human") or (
+                i == 2 and self.pairwise_output_head_name == "mouse"
+            ):
+                Y_hat_pairwise_output_head = Y_hat[:, :, self.pairwise_output_head_ind]
+                Y_pairwise_output_head = Y[:, :, self.pairwise_output_head_ind]
+                pairwise_output_head_poission_loss = self.poisson_loss(
+                    Y_hat_pairwise_output_head, Y_pairwise_output_head
+                )
+                self.log(
+                    "train/pairwise_output_head_poisson_loss",
+                    pairwise_output_head_poission_loss,
+                )
+                upweighted_pairwise_output_head_poission_loss = (
+                    pairwise_output_head_poission_loss
+                    * self.hparams.pairwise_output_head_upweight_factor
+                )
+                self.log(
+                    "train/upweighted_pairwise_output_head_poisson_loss",
+                    upweighted_pairwise_output_head_poission_loss,
+                )
+                loss += upweighted_pairwise_output_head_poission_loss
+
+                Y_hat_pairwise_output_head = Y_hat_pairwise_output_head.reshape(
+                    -1, Y_hat_pairwise_output_head.shape[-1]
+                )
+                Y_pairwise_output_head = Y_pairwise_output_head.reshape(
+                    -1, Y_pairwise_output_head.shape[-1]
+                )
+                self.train_metrics["pairwise_output_head_r2_score"](
+                    Y_hat_pairwise_output_head,
+                    Y_pairwise_output_head,
+                    on_step=True,
+                    on_epoch=True,
+                )
 
             total_loss += loss
 
@@ -1188,31 +1281,32 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             self.log(
                 "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
             )
-            self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y.long())
-            self.pairwise_classification_metrics["Precision"](skellum_prob, Y.long())
-            self.pairwise_classification_metrics["Recall"](skellum_prob, Y.long())
-            self.pairwise_classification_metrics["AUROC"](skellum_prob, Y.long())
+
+            self.val_metrics["pairwise_classification_accuracy"](skellum_prob, Y)
+            self.val_metrics["pairwise_classification_precision"](skellum_prob, Y)
+            self.val_metrics["pairwise_classification_recall"](skellum_prob, Y)
+            self.val_metrics["pairwise_classification_auroc"](skellum_prob, Y)
             self.log(
-                "val/pairwise_accuracy",
-                self.pairwise_classification_metrics["Accuracy"],
+                "val/pairwise_classification_accuracy",
+                self.val_metrics["pairwise_classification_accuracy"],
                 sync_dist=True,
                 on_epoch=True,
             )
             self.log(
-                "val/pairwise_precision",
-                self.pairwise_classification_metrics["Precision"],
+                "val/pairwise_classification_precision",
+                self.val_metrics["pairwise_classification_precision"],
                 sync_dist=True,
                 on_epoch=True,
             )
             self.log(
-                "val/pairwise_recall",
-                self.pairwise_classification_metrics["Recall"],
+                "val/pairwise_classification_recall",
+                self.val_metrics["pairwise_classification_recall"],
                 sync_dist=True,
                 on_epoch=True,
             )
             self.log(
-                "val/pairwise_auroc",
-                self.pairwise_classification_metrics["AUROC"],
+                "val/pairwise_classification_auroc",
+                self.val_metrics["pairwise_classification_auroc"],
                 sync_dist=True,
                 on_epoch=True,
             )
@@ -1226,10 +1320,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            self.human_metrics["r2_score"](Y_hat, Y)
+
+            self.val_metrics["human_r2_score"](Y_hat, Y, on_step=True, on_epoch=True)
             self.log(
                 "val/human_r2_score",
-                self.human_metrics["r2_score"],
+                self.val_metrics["human_r2_score"],
                 sync_dist=True,
                 on_epoch=True,
             )
@@ -1243,16 +1338,36 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             )
             Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
             Y = Y.reshape(-1, Y.shape[-1])
-            self.mouse_metrics["r2_score"](Y_hat, Y)
+
+            self.val_metrics["mouse_r2_score"](Y_hat, Y, on_step=True, on_epoch=True)
             self.log(
                 "val/mouse_r2_score",
-                self.mouse_metrics["r2_score"],
+                self.val_metrics["mouse_r2_score"],
                 sync_dist=True,
                 on_epoch=True,
             )
 
         else:
             raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
+
+        if (dataloader_idx == 1 and self.pairwise_output_head_name == "human") or (
+            dataloader_idx == 2 and self.pairwise_output_head_name == "mouse"
+        ):
+            Y_hat_pairwise_output_head = Y_hat[:, :, self.pairwise_output_head_ind]
+            Y_pairwise_output_head = Y[:, :, self.pairwise_output_head_ind]
+            pairwise_output_head_poission_loss = self.poisson_loss(
+                Y_hat_pairwise_output_head, Y_pairwise_output_head
+            )
+            self.log(
+                "val/pairwise_output_head_poisson_loss",
+                pairwise_output_head_poission_loss,
+            )
+            self.val_metrics["pairwise_output_head_r2_score"](
+                Y_hat_pairwise_output_head,
+                Y_pairwise_output_head,
+                on_step=True,
+                on_epoch=True,
+            )
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         if dataloader_idx == 0:
