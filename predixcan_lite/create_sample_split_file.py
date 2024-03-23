@@ -1,13 +1,20 @@
+from argparse import ArgumentParser
 from collections import defaultdict
 from functools import partial
 
 import h5py
 import pandas as pd
 
-TRAIN_H5_PATH = "../finetuning/data/h5_bins_384_chrom_split/train.h5"
-VAL_H5_PATH = "../finetuning/data/h5_bins_384_chrom_split/val.h5"
-TEST_H5_PATH = "../finetuning/data/h5_bins_384_chrom_split/test.h5"
-OUTPUT_PATH = "sample_splits.h5_bins_384_chrom_split.csv"
+
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument("output_path", type=str)
+    # fmt: off
+    parser.add_argument("--train_h5_path", type=str, default="../finetuning/data/h5_bins_384_chrom_split/train.h5")
+    parser.add_argument("--val_h5_path", type=str, default="../finetuning/data/h5_bins_384_chrom_split/val.h5")
+    parser.add_argument("--test_h5_path", type=str, default="../finetuning/data/h5_bins_384_chrom_split/test.h5")
+    # fmt: on
+    return parser.parse_args()
 
 
 def get_samples(h5_split_path: str) -> dict[str, set]:
@@ -42,9 +49,10 @@ def determine_sample_split(
 
 
 def main():
-    gene_to_train_samples = get_samples(TRAIN_H5_PATH)
-    gene_to_val_samples = get_samples(VAL_H5_PATH)
-    gene_to_test_samples = get_samples(TEST_H5_PATH)
+    args = parse_args()
+    gene_to_train_samples = get_samples(args.train_h5_path)
+    gene_to_val_samples = get_samples(args.val_h5_path)
+    gene_to_test_samples = get_samples(args.test_h5_path)
 
     # Get a sorted list of all genes
     genes = (
@@ -82,7 +90,7 @@ def main():
         genes_f.append(g)
 
     sample_splits_df = pd.DataFrame(all_sample_splits, index=genes_f, columns=samples)
-    sample_splits_df.to_csv(OUTPUT_PATH)
+    sample_splits_df.to_csv(args.output_path)
 
 
 if __name__ == "__main__":
