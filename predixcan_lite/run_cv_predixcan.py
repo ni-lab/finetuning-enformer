@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument("output_preds_path", type=str)
     # fmt: off
     parser.add_argument("--counts_path", type=str, default="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
-    parser.add_argument("--sample_splits_path", type=str, default="sample_splits.h5_bins_384_chrom_split.csv")
+    parser.add_argument("--sample_splits_path", type=str, default="h5_bins_384_chrom_split/sample_splits.h5_bins_384_chrom_split.csv")
     # fmt: on
     parser.add_argument("--context_size", type=int, default=1_000_000)
     parser.add_argument("--chunk_start", type=int, default=0)
@@ -75,16 +75,20 @@ def load_gene_data(
     dev_dosage_mtx = utils.convert_to_dosage_matrix(dev_genotype_mtx)
     test_dosage_mtx = utils.convert_to_dosage_matrix(test_genotype_mtx)
 
-    variants = dev_dosage_mtx.index
-    dev_samples = dev_dosage_mtx.columns
-    test_samples = test_dosage_mtx.columns
-
-    X_dev = dev_dosage_mtx.to_numpy(dtype=np.float32).T
-    X_test = test_dosage_mtx.to_numpy(dtype=np.float32).T
+    X_dev = dev_dosage_mtx.to_numpy(dtype=np.float64).T
+    X_test = test_dosage_mtx.to_numpy(dtype=np.float64).T
     Y_dev = counts_df.loc[gene, dev_samples].to_numpy()
     Y_test = counts_df.loc[gene, test_samples].to_numpy()
 
-    return (X_dev, X_test, Y_dev, Y_test, dev_samples, test_samples, variants)
+    return (
+        X_dev,
+        X_test,
+        Y_dev,
+        Y_test,
+        dev_samples,
+        test_samples,
+        dev_dosage_mtx.index,
+    )
 
 
 @ignore_warnings(category=ConvergenceWarning)
