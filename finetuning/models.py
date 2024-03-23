@@ -1038,30 +1038,6 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         self.classification_loss = nn.BCELoss()
         self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
 
-        # self.pairwise_classification_metrics = nn.ModuleDict(
-        #     {
-        #         "Accuracy": Accuracy("binary"),
-        #         "Precision": Precision("binary"),
-        #         "Recall": Recall("binary"),
-        #         "AUROC": AUROC("binary"),
-        #     }
-        # )
-        # self.human_metrics = nn.ModuleDict(
-        #     {
-        #         "r2_score": R2Score(num_outputs=5313),
-        #     }
-        # )
-        # self.mouse_metrics = nn.ModuleDict(
-        #     {
-        #         "r2_score": R2Score(num_outputs=1643),
-        #     }
-        # )
-        # self.pairwise_output_head_metrics = nn.ModuleDict(
-        #     {
-        #         "pairwise_output_head_r2_score": R2Score(num_outputs=1),
-        #     }
-        # )
-
         self.all_metrics = torchmetrics.MetricCollection(
             {
                 "pairwise_classification_accuracy": torchmetrics.Accuracy("binary"),
@@ -1195,8 +1171,14 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 self.log("train/human_poisson_loss", poisson_loss)
                 loss += poisson_loss
 
-                self.train_metrics["human_r2_score"](
-                    Y_hat, Y, on_step=True, on_epoch=True
+                Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
+                Y = Y.reshape(-1, Y.shape[-1])
+                self.train_metrics["human_r2_score"](Y_hat, Y)
+                self.log(
+                    "train/human_r2_score",
+                    self.train_metrics["human_r2_score"],
+                    on_step=True,
+                    on_epoch=True,
                 )
 
             elif i == 2:  # this is the original mouse training data
@@ -1207,6 +1189,16 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 poisson_loss = self.poisson_loss(Y_hat, Y)
                 self.log("train/mouse_poisson_loss", poisson_loss)
                 loss += poisson_loss
+
+                Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
+                Y = Y.reshape(-1, Y.shape[-1])
+                self.train_metrics["mouse_r2_score"](Y_hat, Y)
+                self.log(
+                    "train/mouse_r2_score",
+                    self.train_metrics["mouse_r2_score"],
+                    on_step=True,
+                    on_epoch=True,
+                )
 
             else:
                 raise ValueError(f"Invalid number of dataloaders: {i+1}")
@@ -1241,8 +1233,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                     -1, Y_pairwise_output_head.shape[-1]
                 )
                 self.train_metrics["pairwise_output_head_r2_score"](
-                    Y_hat_pairwise_output_head,
-                    Y_pairwise_output_head,
+                    Y_hat_pairwise_output_head, Y_pairwise_output_head
+                )
+                self.log(
+                    "train/pairwise_output_head_r2_score",
+                    self.train_metrics["pairwise_output_head_r2_score"],
                     on_step=True,
                     on_epoch=True,
                 )
