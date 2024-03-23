@@ -995,7 +995,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         use_scheduler: bool,
         warmup_steps: int,
         n_total_bins: int,
-        pairwise_output_head_upweight_factor: float = 5312.0,  # this is so that the pairwise output is upweighted to have the same influence on the loss as the rest of the outputs
+        pairwise_output_head_upweight_factor: float = 1.0,  # this is so that the pairwise output is upweighted to have the same influence on the loss as the rest of the outputs
         sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
@@ -1171,9 +1171,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 self.log("train/human_poisson_loss", poisson_loss)
                 loss += poisson_loss
 
-                Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-                Y = Y.reshape(-1, Y.shape[-1])
-                self.train_metrics["human_r2_score"](Y_hat, Y)
+                self.train_metrics["human_r2_score"](Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1]))
                 self.log(
                     "train/human_r2_score",
                     self.train_metrics["human_r2_score"],
@@ -1189,10 +1187,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 poisson_loss = self.poisson_loss(Y_hat, Y)
                 self.log("train/mouse_poisson_loss", poisson_loss)
                 loss += poisson_loss
-
-                Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-                Y = Y.reshape(-1, Y.shape[-1])
-                self.train_metrics["mouse_r2_score"](Y_hat, Y)
+                
+                self.train_metrics["mouse_r2_score"](Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1]))
                 self.log(
                     "train/mouse_r2_score",
                     self.train_metrics["mouse_r2_score"],
@@ -1226,12 +1222,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 )
                 loss += upweighted_pairwise_output_head_poission_loss
 
-                Y_hat_pairwise_output_head = Y_hat_pairwise_output_head.reshape(
-                    -1, Y_hat_pairwise_output_head.shape[-1]
-                )
-                Y_pairwise_output_head = Y_pairwise_output_head.reshape(
-                    -1, Y_pairwise_output_head.shape[-1]
-                )
+                Y_hat_pairwise_output_head = Y_hat_pairwise_output_head.reshape(-1)
+                Y_pairwise_output_head = Y_pairwise_output_head.reshape(-1)
                 self.train_metrics["pairwise_output_head_r2_score"](
                     Y_hat_pairwise_output_head, Y_pairwise_output_head
                 )
@@ -1313,10 +1305,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             self.log(
                 "val/human_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
             )
-            Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-            Y = Y.reshape(-1, Y.shape[-1])
 
-            self.val_metrics["human_r2_score"](Y_hat, Y, on_step=True, on_epoch=True)
+            self.val_metrics["human_r2_score"](Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1]))
             self.log(
                 "val/human_r2_score",
                 self.val_metrics["human_r2_score"],
@@ -1331,10 +1321,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             self.log(
                 "val/mouse_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
             )
-            Y_hat = Y_hat.reshape(-1, Y_hat.shape[-1])
-            Y = Y.reshape(-1, Y.shape[-1])
 
-            self.val_metrics["mouse_r2_score"](Y_hat, Y, on_step=True, on_epoch=True)
+            self.val_metrics["mouse_r2_score"](Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1]))
             self.log(
                 "val/mouse_r2_score",
                 self.val_metrics["mouse_r2_score"],
@@ -1357,9 +1345,13 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 "val/pairwise_output_head_poisson_loss",
                 pairwise_output_head_poission_loss,
             )
-            self.val_metrics["pairwise_output_head_r2_score"](
-                Y_hat_pairwise_output_head,
-                Y_pairwise_output_head,
+            
+            Y_hat_pairwise_output_head = Y_hat_pairwise_output_head.reshape(-1)
+            Y_pairwise_output_head = Y_pairwise_output_head.reshape(-1)
+            self.val_metrics["pairwise_output_head_r2_score"](Y_hat_pairwise_output_head, Y_pairwise_output_head)
+            self.log(
+                "train/pairwise_output_head_r2_score",
+                self.val_metrics["pairwise_output_head_r2_score"],
                 on_step=True,
                 on_epoch=True,
             )
