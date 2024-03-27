@@ -2,11 +2,10 @@ import os
 from argparse import ArgumentParser
 from collections import defaultdict
 
-import h5py
-
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -55,7 +54,7 @@ def parse_args():
     parser.add_argument("--h5_dir", type=str, default="../finetuning/data/h5_bins_384_chrom_split")
     # fmt: on
     parser.add_argument("--seqlen", type=int, default=384 * 128)
-    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--batch_size", type=int, default=16)
 
     args = parser.parse_args()
     assert args.seqlen % 128 == 0
@@ -84,7 +83,7 @@ def make_predictions(
     X = rearrange(X, "S H L BP -> (S H) L BP")
     outs = model(X)["human"][:, :, track_idx]  # (samples * haplotypes, target_length)
     outs = average_center_bins(outs, avg_center_n_bins)
-    outs = rearrange(outs, "(S H) -> S H", S=X.shape[0])
+    outs = rearrange(outs, "(S H) -> S H", H=2)
     outs = outs.mean(dim=1).cpu().numpy()
     return outs
 
@@ -120,7 +119,6 @@ def main():
     model = Enformer.from_pretrained(
         "EleutherAI/enformer-official-rough", target_length=args.seqlen // 128
     ).to(device)
-    model = torch.compile(model)
 
     preds = defaultdict(dict)  # gene -> sample -> pred
     get_all_preds(model, device, train_dl, preds)
@@ -129,15 +127,11 @@ def main():
 
     # Save predictions as a dataframe
     genes = sorted(preds.keys())
-    gene_to_idx = {g: i for i, g in enumerate(genes)}
-
     samples = sorted({s for gene in preds for s in preds[gene]})
-    sample_to_idx = {s: i for i, s in enumerate(samples)}
-
     preds_mtx = np.full((len(genes), len(samples)), np.nan)
-    for g in genes:
-        for s in preds[g]:
-            preds_mtx[gene_to_idx[g], sample_to_idx[s]] = preds[g][s]
+    for row, g in enumerate(genes):
+        for col, s in enumerate(samples):
+            preds_mtx[row, col] = preds[g][s]
 
     preds_df = pd.DataFrame(preds_mtx, index=genes, columns=samples)
     preds_df.to_csv(args.output_path)
