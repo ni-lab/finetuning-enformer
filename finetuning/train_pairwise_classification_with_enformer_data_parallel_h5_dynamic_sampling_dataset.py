@@ -194,7 +194,14 @@ def main():
             print("No checkpoint found to resume from. Training from scratch.")
             resume_flag = False
         else:
-            previous_ckpt_path = os.listdir(ckpts_dir)[0]
+            previous_ckpts = os.listdir(ckpts_dir)
+            # sort by step number
+            print("Previous checkpoints found: ", previous_ckpts)
+            previous_ckpts.sort(
+                key=lambda x: int(x.split("=")[-1].split(".")[0].split("-")[0])
+            )
+            previous_ckpt_path = previous_ckpts[-1]
+
             previous_ckpt_path = os.path.join(ckpts_dir, previous_ckpt_path)
             print(f"Resuming from checkpoint: {previous_ckpt_path}")
             trainer.validate(model, dataloaders=val_dl, ckpt_path=previous_ckpt_path)
