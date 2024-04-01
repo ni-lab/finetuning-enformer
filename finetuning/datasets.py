@@ -548,6 +548,72 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         return {"seq1": seq1, "seq2": seq2, "Y": Y}
 
 
+class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        h5_path: str,
+        n_pairs_per_gene: int,
+        seqlen: int,
+        prefetch_seqs: bool = False,
+        random_seed: int = 42,
+    ):
+        """
+        If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
+        very slow (~15 minutes for the training set of h5_bins_384), but speeds up __getitem__.
+        We recommend setting this to True only if you have a lot of memory (> 200GB per process).
+        """
+        super().__init__()
+        assert seqlen % 128 == 0
+
+        self.h5_file = h5py.File(h5_path, "r")
+        self.n_pairs_per_gene = n_pairs_per_gene
+        self.seqlen = seqlen
+        self.rng = np.random.default_rng(random_seed)
+
+        # Load everything into memory
+        self.genes = self.h5_file["genes"][:].astype(str)
+        self.samples = self.h5_file["samples"][:].astype(str)
+        if prefetch_seqs:
+            self.seqs = self.h5_file["seqs"][:]  # (n_seqs, 2, length, 4)
+        else:
+            self.seqs = self.h5_file["seqs"]
+        assert self.seqs.shape[2] >= self.seqlen
+        self.Y = self.h5_file["Y"][:]
+
+        assert self.genes.size == self.samples.size == self.seqs.shape[0] == self.Y.size
+
+        self.unique_genes = sorted(np.unique(self.genes))
+        self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
+
+    def get_total_n_bins(self):
+        return self.seqlen // 128
+
+    def __len__(self):
+        return self.n_pairs_per_gene * len(np.unique(self.genes))
+
+    def __shorten_seq(self, seq):
+        """
+        seq: (2, seqlen, 4)
+        """
+        if seq.shape[1] == self.seqlen:
+            return seq
+        start_idx = (seq.shape[1] - self.seqlen) // 2
+        end_idx = start_idx + self.seqlen
+        return seq[:, start_idx:end_idx, :]
+
+    def __getitem__(self, idx):
+        chosen_gene = self.unique_genes[idx % len(self.unique_genes)]
+        idx1, idx2 = self.rng.choice(
+            self.gene_to_idxs[chosen_gene], size=2, replace=False
+        )
+        assert self.genes[idx1] == self.genes[idx2]
+        assert self.samples[idx1] != self.samples[idx2]
+
+        seq1 = self.__shorten_seq(self.seqs[idx1].astype(np.float32))
+        seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
+        return {"seq1": seq1, "seq2": seq2, "Y1": self.Y[idx1], "Y2": self.Y[idx2]}
+
+
 class PairwiseMPRADataset(torch.utils.data.Dataset):
     def __init__(self, filepath: str, split: str, reverse_complement: bool = False):
         super().__init__()
