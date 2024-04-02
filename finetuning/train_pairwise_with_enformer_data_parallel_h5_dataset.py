@@ -1,6 +1,7 @@
 import os
 from argparse import ArgumentParser, BooleanOptionalAction
 
+import numpy as np
 import torch
 from datasets import (EnformerDataset, PairwiseRegressionH5Dataset,
                       PairwiseRegressionOnCountsH5DatasetDynamicSampling)
