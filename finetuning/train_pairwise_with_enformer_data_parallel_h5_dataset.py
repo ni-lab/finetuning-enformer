@@ -3,7 +3,7 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
-from datasets import (EnformerDataset, PairwiseRegressionH5Dataset,
+from datasets import (EnformerDataset, PairwiseRegressionOnCountsH5Dataset,
                       PairwiseRegressionOnCountsH5DatasetDynamicSampling)
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
@@ -53,7 +53,7 @@ def main():
         seqlen=args.seqlen,
         random_seed=args.data_seed,
     )
-    pairwise_val_ds = PairwiseRegressionH5Dataset(
+    pairwise_val_ds = PairwiseRegressionOnCountsH5Dataset(
         args.val_data_path,
         n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
