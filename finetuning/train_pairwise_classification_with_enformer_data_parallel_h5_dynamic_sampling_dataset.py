@@ -131,7 +131,7 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={global_step}-val_loss={val/loss:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
+        filename="epoch={epoch}-step={global_step}-val_loss={val/pairwise_classification_loss/dataloader_idx_0:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
         monitor="val/pairwise_classification_accuracy/dataloader_idx_0",
         mode="max",
         save_top_k=-1,
