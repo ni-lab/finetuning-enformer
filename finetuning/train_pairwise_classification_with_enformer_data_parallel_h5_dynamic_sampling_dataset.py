@@ -134,7 +134,7 @@ def main():
         filename="epoch={epoch}-step={global_step}-val_loss={val/loss:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
         monitor="val/pairwise_classification_accuracy/dataloader_idx_0",
         mode="max",
-        save_top_k=3,
+        save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
@@ -197,9 +197,9 @@ def main():
             resume_flag = False
         else:
             previous_ckpts = os.listdir(ckpts_dir)
-            # sort by accuracy
+            # sort by step number
             print("Previous checkpoints found: ", previous_ckpts)
-            previous_ckpts.sort(key=lambda x: float(x.split("=")[-1].split(".")[0]))
+            previous_ckpts.sort(key=lambda x: int(x.split("-")[1].split("=")[1]))
             previous_ckpt_path = previous_ckpts[-1]
 
             previous_ckpt_path = os.path.join(ckpts_dir, previous_ckpt_path)
