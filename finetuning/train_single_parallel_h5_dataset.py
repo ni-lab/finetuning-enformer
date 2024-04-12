@@ -145,6 +145,10 @@ def main():
             previous_ckpts = os.listdir(ckpts_dir)
             # sort by epoch number
             print("Previous checkpoints found: ", previous_ckpts)
+            print(
+                "Epoch numbers: ",
+                [int(x.split("-")[0].split("=")[1]) for x in previous_ckpts],
+            )
             previous_ckpts.sort(key=lambda x: int(x.split("-")[0].split("=")[1]))
             previous_ckpt_path = previous_ckpts[-1]
 
