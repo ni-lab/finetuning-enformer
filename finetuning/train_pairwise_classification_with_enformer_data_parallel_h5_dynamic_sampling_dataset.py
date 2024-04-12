@@ -131,7 +131,7 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={global_step}-val_loss={val/pairwise_classification_loss/dataloader_idx_0:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
+        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_classification_loss/dataloader_idx_0:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
         monitor="val/pairwise_classification_accuracy/dataloader_idx_0",
         mode="max",
         save_top_k=-1,
@@ -197,9 +197,9 @@ def main():
             resume_flag = False
         else:
             previous_ckpts = os.listdir(ckpts_dir)
-            # sort by step number
+            # sort by epoch number
             print("Previous checkpoints found: ", previous_ckpts)
-            previous_ckpts.sort(key=lambda x: int(x.split("-")[1].split("=")[1]))
+            previous_ckpts.sort(key=lambda x: int(x.split("-")[0].split("=")[1]))
             previous_ckpt_path = previous_ckpts[-1]
 
             previous_ckpt_path = os.path.join(ckpts_dir, previous_ckpt_path)
