@@ -1731,7 +1731,6 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
         self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
-        self.mse_loss = nn.MSELoss()
         self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
 
         self.center_start = (n_total_bins - avg_center_n_bins) // 2
@@ -2031,6 +2030,170 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
                 return {"Y_hat": Y_hat, "Y": Y}
             else:
                 return Y_hat
+
+    def configure_optimizers(self):
+        if self.hparams.weight_decay is None:
+            optimizer = torch.optim.Adam(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
+
+        return optimizer
+
+
+class SingleRegressionOnCountsFloatPrecision(L.LightningModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
+        n_total_bins: int,
+        avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+        if checkpoint is None:
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+        else:
+            checkpoint = torch.load(checkpoint)
+            new_state_dict = {}
+            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
+            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
+            if state_dict_subset_prefix is not None:
+                print(
+                    "Loading subset of state dict from checkpoint, key prefix: ",
+                    state_dict_subset_prefix,
+                )
+                for key in checkpoint["state_dict"]:
+                    if key.startswith(state_dict_subset_prefix):
+                        new_state_dict[
+                            key[len(state_dict_subset_prefix) :]
+                        ] = checkpoint["state_dict"][key]
+            else:
+                new_state_dict = checkpoint["state_dict"]
+            self.base = BaseEnformer.from_pretrained(
+                "EleutherAI/enformer-official-rough"
+            )
+            self.base.load_state_dict(new_state_dict)
+
+        enformer_hidden_dim = 2 * self.base.dim
+        self.attention_pool = AttentionPool(enformer_hidden_dim)
+        self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
+
+        self.center_start = (n_total_bins - avg_center_n_bins) // 2
+        self.center_end = self.center_start + avg_center_n_bins
+
+        self.all_metrics = torchmetrics.MetricCollection(
+            {
+                "r2_score": R2Score(num_outputs=1),
+            }
+        )
+
+        self.train_metrics = self.all_metrics.clone(prefix="train/")
+        self.val_metrics = self.all_metrics.clone(prefix="val/")
+
+    def forward(
+        self,
+        X,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if not return_base_predictions:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(
+                    X
+                )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            X = self.base(
+                X,
+                return_only_embeddings=True,
+                target_length=self.hparams.n_total_bins,
+            )  # (S * H, n_total_bins, enformer_hidden_dim)
+
+            assert X.shape[1] == self.hparams.n_total_bins
+            X = X[:, self.center_start : self.center_end, :]
+            X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
+            Y = self.prediction_head(X)  # (S * H, 1)
+            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+            Y = Y.mean(dim=1)
+            return Y
+        else:
+            Y = self.base(X, head=base_predictions_head, target_length=896)
+
+        return Y
+
+    def __smape(self, Y1, Y2):
+        """
+        Y1 (tensor): (sample,)
+        Y2 (tensor): (sample,)
+        """
+        return torch.mean(2 * torch.abs(Y1 - Y2) / (torch.abs(Y1) + torch.abs(Y2)))
+
+    def training_step(self, batch, batch_idx):
+        X, Y, Z = batch["seq"], batch["y"], batch["z"]
+        Y_hat = self(X)
+        loss = self.__smape(Y_hat, Y)
+        self.log("train/smape_loss", loss)
+
+        self.train_metrics["r2_score"](Y_hat, Y)
+        self.log("train/r2_score", self.train_metrics["r2_score"], on_epoch=True)
+
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        if self.hparams.weight_decay is not None:
+            self.log(
+                "train/weight_decay",
+                self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+            )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        X, Y, Z = batch["seq"], batch["y"], batch["z"]
+        Y_hat = self(X)
+        loss = self.__smape(Y_hat, Y)
+        self.log("val/smape_loss", loss, sync_dist=True, on_epoch=True)
+
+        self.val_metrics["r2_score"](Y_hat, Y)
+        self.log(
+            "val/r2_score", self.val_metrics["r2_score"], sync_dist=True, on_epoch=True
+        )
+
+    def predict_step(self, batch, batch_idx):
+        X, Y, Z = batch["seq"], batch["y"], batch["z"]
+        Y_hat = self(X)
+        if "y" in batch:
+            Y = batch["y"]
+            return {"Y_hat": Y_hat, "Y": Y}
+        else:
+            return {"Y_hat": Y_hat}
 
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:

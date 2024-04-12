@@ -11,33 +11,6 @@ from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from torchdata.datapipes.iter import FileLister, FileOpener
 
 
-class SampleDataset(torch.utils.data.Dataset):
-    def __init__(self, filepath: str):
-        data = np.load(filepath)
-        self.genes = data["genes"]
-        self.seqs = data["seqs"]
-        self.samples = data["samples"]
-        self.Y = data["Y"]
-        self.Z = data["Z"]
-        assert (
-            self.genes.size
-            == self.seqs.shape[0]
-            == self.samples.size
-            == self.Y.size
-            == self.Z.size
-        )
-
-        self.seq_idx_embedder = utils.create_seq_idx_embedder()
-
-    def __len__(self):
-        return self.seqs.shape[0]
-
-    def __getitem__(self, idx):
-        seq = self.seq_idx_embedder[self.seqs[idx]]
-        y = max(self.Y[idx], 0.0)
-        return {"seq": seq, "y": y}
-
-
 class SampleH5Dataset(torch.utils.data.Dataset):
     def __init__(self, h5_path: str, seqlen: int, prefetch_seqs: bool = False):
         """
@@ -90,6 +63,34 @@ class SampleH5Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         seq = self.__shorten_seq(self.seqs[idx]).astype(np.float32)
+        y = self.Y[idx]
+        z = self.Z[idx]
+        return {"seq": seq, "y": y, "z": z}
+
+
+class SampleDataset(torch.utils.data.Dataset):
+    def __init__(self, filepath: str):
+        data = np.load(filepath)
+        self.genes = data["genes"]
+        self.seqs = data["seqs"]
+        self.samples = data["samples"]
+        self.Y = data["Y"]
+        self.Z = data["Z"]
+        assert (
+            self.genes.size
+            == self.seqs.shape[0]
+            == self.samples.size
+            == self.Y.size
+            == self.Z.size
+        )
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+
+    def __len__(self):
+        return self.seqs.shape[0]
+
+    def __getitem__(self, idx):
+        seq = self.seq_idx_embedder[self.seqs[idx]]
         y = max(self.Y[idx], 0.0)
         return {"seq": seq, "y": y}
 
