@@ -9,7 +9,7 @@ import torchmetrics
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
-from flash.core.optimizers import LinearWarmupCosineAnnealingLR
+from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from torchmetrics import AUROC, Accuracy, Precision, R2Score, Recall
 
 
