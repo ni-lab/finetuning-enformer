@@ -77,15 +77,15 @@ def main():
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
         filename="epoch={epoch}-step={step}-val_loss={val/smape_loss:.4f}-val_r2_score={val/r2_score:.4f}",
-        monitor="val/r2_score",
-        mode="max",
+        monitor="val/smape_loss",
+        mode="min",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/r2_score",
-        mode="max",
+        monitor="val/smape_loss",
+        mode="min",
         patience=5,
     )
 

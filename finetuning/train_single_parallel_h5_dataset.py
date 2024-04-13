@@ -78,14 +78,14 @@ def main():
         dirpath=ckpts_dir,
         filename="epoch={epoch}-step={step}-val_loss={val/mse_loss:.4f}",
         monitor="val/mse_loss",
-        mode="max",
+        mode="min",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
         monitor="val/mse_loss",
-        mode="max",
+        mode="min",
         patience=5,
     )
 
