@@ -8,8 +8,7 @@ from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.strategies import DDPStrategy
-from models import SingleRegressionOnCountsFloatPrecision
+from models import SingleRegressionFloatPrecision
 
 np.random.seed(97)
 torch.manual_seed(97)
@@ -77,15 +76,15 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={step}-val_loss={val/smape_loss:.4f}-val_r2_score={val/r2_score:.4f}",
-        monitor="val/r2_score",
+        filename="epoch={epoch}-step={step}-val_loss={val/mse_loss:.4f}",
+        monitor="val/mse_loss",
         mode="max",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/r2_score",
+        monitor="val/mse_loss",
         mode="max",
         patience=5,
     )
@@ -126,7 +125,7 @@ def main():
         strategy="ddp_find_unused_parameters_true",
     )
 
-    model = SingleRegressionOnCountsFloatPrecision(
+    model = SingleRegressionFloatPrecision(
         lr=args.lr,
         weight_decay=args.weight_decay,
         use_scheduler=args.use_scheduler,
