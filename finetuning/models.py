@@ -1502,14 +1502,17 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
 
         self.classification_loss = nn.BCELoss()
 
-        self.pairwise_classification_metrics = nn.ModuleDict(
+        self.all_metrics = torchmetrics.MetricCollection(
             {
-                "Accuracy": Accuracy("binary"),
-                "Precision": Precision("binary"),
-                "Recall": Recall("binary"),
-                "AUROC": AUROC("binary"),
+                "pairwise_classification_accuracy": torchmetrics.Accuracy("binary"),
+                "pairwise_classification_precision": torchmetrics.Precision("binary"),
+                "pairwise_classification_recall": torchmetrics.Recall("binary"),
+                "pairwise_classification_auroc": torchmetrics.AUROC("binary"),
             }
         )
+
+        self.train_metrics = self.all_metrics.clone(prefix="train/")
+        self.val_metrics = self.all_metrics.clone(prefix="val/")
 
     def forward(
         self,
@@ -1522,27 +1525,21 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         """
         if not return_base_predictions:
             if X.shape[-1] != 4:
-                X = seq_indices_to_one_hot(
-                    X
-                )  # (S * H, L, 4) or (S, H, L, 4) or (S, L, 4)
+                X = seq_indices_to_one_hot(X)
             if len(X.shape) == 4:
                 X = rearrange(X, "S H L NC -> (S H) L NC")
             X = self.base(
                 X,
                 head=self.pairwise_output_head_name,
                 target_length=self.hparams.n_total_bins,
-            )  # (S * H, n_total_bins, num_outputs)
+            )
             assert X.shape[1] == self.hparams.n_total_bins
 
-            X = X[
-                :, :, self.pairwise_output_head_ind
-            ]  # get the selected output, (S * H, n_total_bins)
-            X = X[
-                :, self.center_start : self.center_end
-            ]  # get the center bins, (S * H, sum_center_n_bins)
-            X = X.sum(dim=1)  # sum the center bins, (S * H)
-            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
-            Y = Y.mean(dim=1)  # (S)
+            X = X[:, :, self.pairwise_output_head_ind]
+            X = X[:, self.center_start : self.center_end]
+            X = X.sum(dim=1)
+            Y = rearrange(X, "(S H) -> S H", H=2)
+            Y = Y.mean(dim=1)
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1550,12 +1547,6 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         return Y
 
     def compute_skellum_prob_after_anscombe_transform(self, Y1, Y2):
-        """
-        Here, Y1 and Y2 are assumed to follow the Poisson distribution.
-        This function computes the probability of Y1 > Y2 after the Anscombe transform.
-        Y1 (tensor): (sample, )
-        Y2 (tensor): (sample, )
-        """
         Y1 = 2 * torch.sqrt(Y1 + 3 / 8)
         Y2 = 2 * torch.sqrt(Y2 + 3 / 8)
 
@@ -1582,12 +1573,48 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
             Y1_hat, Y2_hat
         )
-        total_loss = self.classification_loss(skellum_prob, Y)
-        self.log("train/pairwise_classification_loss", total_loss)
-        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
-        return total_loss
+        loss = self.classification_loss(skellum_prob, Y)
+        self.log("train/pairwise_classification_loss", loss)
 
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        self.train_metrics["pairwise_classification_accuracy"](skellum_prob, Y)
+        self.train_metrics["pairwise_classification_precision"](skellum_prob, Y)
+        self.train_metrics["pairwise_classification_recall"](skellum_prob, Y)
+        self.train_metrics["pairwise_classification_auroc"](skellum_prob, Y)
+        self.log(
+            "train/pairwise_classification_accuracy",
+            self.train_metrics["pairwise_classification_accuracy"],
+            on_step=False,
+            on_epoch=True,
+        )
+        self.log(
+            "train/pairwise_classification_precision",
+            self.train_metrics["pairwise_classification_precision"],
+            on_step=False,
+            on_epoch=True,
+        )
+        self.log(
+            "train/pairwise_classification_recall",
+            self.train_metrics["pairwise_classification_recall"],
+            on_step=False,
+            on_epoch=True,
+        )
+        self.log(
+            "train/pairwise_classification_auroc",
+            self.train_metrics["pairwise_classification_auroc"],
+            on_step=False,
+            on_epoch=True,
+        )
+
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        if self.hparams.weight_decay is not None:
+            self.log(
+                "train/weight_decay",
+                self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+            )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
         X1, X2, Y = (
             batch["seq1"],
             batch["seq2"],
@@ -1596,9 +1623,9 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         X = torch.cat([X1, X2], dim=0)
         if X.shape[-1] != 4:
             X = rearrange(X, "S H L -> (S H) L")
-            X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+            X = seq_indices_to_one_hot(X)
         else:
-            X = rearrange(X, "S H L NC -> (S H) L NC")  # (S * H, L, 4)
+            X = rearrange(X, "S H L NC -> (S H) L NC")
         Y_hat = self(X)
         Y1_hat = Y_hat[: X1.shape[0]]
         Y2_hat = Y_hat[X1.shape[0] :]
@@ -1606,83 +1633,79 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
             Y1_hat, Y2_hat
         )
         loss = self.classification_loss(skellum_prob, Y)
+        self.log("val/pairwise_classification_loss", loss)
+
+        self.val_metrics["pairwise_classification_accuracy"](skellum_prob, Y)
+        self.val_metrics["pairwise_classification_precision"](skellum_prob, Y)
+        self.val_metrics["pairwise_classification_recall"](skellum_prob, Y)
+        self.val_metrics["pairwise_classification_auroc"](skellum_prob, Y)
         self.log(
-            "val/pairwise_classification_loss", loss, sync_dist=True, on_epoch=True
-        )
-        self.pairwise_classification_metrics["Accuracy"](skellum_prob, Y.long())
-        self.pairwise_classification_metrics["Precision"](skellum_prob, Y.long())
-        self.pairwise_classification_metrics["Recall"](skellum_prob, Y.long())
-        self.pairwise_classification_metrics["AUROC"](skellum_prob, Y.long())
-        self.log(
-            "val/pairwise_accuracy",
-            self.pairwise_classification_metrics["Accuracy"],
-            sync_dist=True,
+            "val/pairwise_classification_accuracy",
+            self.val_metrics["pairwise_classification_accuracy"],
+            on_step=False,
             on_epoch=True,
         )
         self.log(
-            "val/pairwise_precision",
-            self.pairwise_classification_metrics["Precision"],
-            sync_dist=True,
+            "val/pairwise_classification_precision",
+            self.val_metrics["pairwise_classification_precision"],
+            on_step=False,
             on_epoch=True,
         )
         self.log(
-            "val/pairwise_recall",
-            self.pairwise_classification_metrics["Recall"],
-            sync_dist=True,
+            "val/pairwise_classification_recall",
+            self.val_metrics["pairwise_classification_recall"],
+            on_step=False,
             on_epoch=True,
         )
         self.log(
-            "val/pairwise_auroc",
-            self.pairwise_classification_metrics["AUROC"],
-            sync_dist=True,
+            "val/pairwise_classification_auroc",
+            self.val_metrics["pairwise_classification_auroc"],
+            on_step=False,
             on_epoch=True,
         )
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        if "seq1" in batch and "seq2" in batch:  # this is the pairwise data
-            X1, X2 = batch["seq1"], batch["seq2"]
-            X = torch.cat([X1, X2], dim=0)
-            if X.shape[-1] != 4:
-                X = rearrange(X, "S H L -> (S H) L")
-                X = seq_indices_to_one_hot(X)
-            else:
-                X = rearrange(X, "S H L NC -> (S H) L NC")
-            Y_hat = self(X)
-            Y1_hat = Y_hat[: X1.shape[0]]
-            Y2_hat = Y_hat[X1.shape[0] :]
-            skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
-                Y1_hat, Y2_hat
-            )
-            if "Y" in batch:
-                Y = batch["Y"].float()
-                return {
-                    "Y1_hat": Y1_hat,
-                    "Y2_hat": Y2_hat,
-                    "skellum_prob": skellum_prob,
-                    "Y": Y,
-                }
-            else:
-                return {
-                    "Y1_hat": Y1_hat,
-                    "Y2_hat": Y2_hat,
-                    "skellum_prob": skellum_prob,
-                }
-        elif "seq" in batch:  # this is the individual sample data
-            X = batch["seq"]
-            Y_hat = self(X)
-            if "y" in batch:
-                Y = batch["y"].float()
-                return {"Y_hat": Y_hat, "Y": Y}
-            else:
-                return {"Y_hat": Y_hat}
+    def predict_step(self, batch, batch_idx):
+        X1, X2 = batch["seq1"], batch["seq2"]
+        X = torch.cat([X1, X2], dim=0)
+        if X.shape[-1] != 4:
+            X = rearrange(X, "S H L -> (S H) L")
+            X = seq_indices_to_one_hot(X)
         else:
-            raise ValueError("Invalid batch")
+            X = rearrange(X, "S H L NC -> (S H) L NC")
+        Y_hat = self(X)
+        Y1_hat = Y_hat[: X1.shape[0]]
+        Y2_hat = Y_hat[X1.shape[0] :]
+        skellum_prob = self.compute_skellum_prob_after_anscombe_transform(
+            Y1_hat, Y2_hat
+        )
+        if "Y" in batch:
+            Y = batch["Y"].float()
+            return {
+                "Y1_hat": Y1_hat,
+                "Y2_hat": Y2_hat,
+                "skellum_prob": skellum_prob,
+                "Y": Y,
+            }
+        else:
+            return {
+                "Y1_hat": Y1_hat,
+                "Y2_hat": Y2_hat,
+                "skellum_prob": skellum_prob,
+            }
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            filter(lambda p: p.requires_grad, self.parameters()),
-            lr=self.hparams.lr,
-        )
+        if self.hparams.weight_decay is None:
+            optimizer = torch.optim.Adam(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
         return optimizer
 
 
