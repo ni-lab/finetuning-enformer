@@ -1460,6 +1460,9 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
     def __init__(
         self,
         lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
         n_total_bins: int,
         sum_center_n_bins: int = 10,
         checkpoint=None,
