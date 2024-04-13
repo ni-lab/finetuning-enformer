@@ -8,6 +8,7 @@ from datasets import RefDataset, SampleDataset, SampleH5Dataset
 from lightning import Trainer
 from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
+    PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseFinetuned,
     PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision,
@@ -119,7 +120,7 @@ def main():
                 )
             except:
                 try:
-                    model = PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
+                    model = PairwiseClassificationFloatPrecision(
                         lr=0,
                         weight_decay=0,
                         use_scheduler=False,
@@ -134,7 +135,7 @@ def main():
                     )
                 except:
                     try:
-                        model = SingleRegressionOnCountsFloatPrecision(
+                        model = PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
                             lr=0,
                             weight_decay=0,
                             use_scheduler=False,
@@ -148,9 +149,24 @@ def main():
                             return_predictions=False,
                         )
                     except:
-                        raise ValueError(
-                            "Model does not have an inbuilt predict step. Attempting to use the predict method with other model types."
-                        )
+                        try:
+                            model = SingleRegressionOnCountsFloatPrecision(
+                                lr=0,
+                                weight_decay=0,
+                                use_scheduler=False,
+                                warmup_steps=0,
+                                n_total_bins=test_ds.get_total_n_bins(),
+                            )
+                            trainer.predict(
+                                model,
+                                test_dl,
+                                ckpt_path=args.checkpoint_path,
+                                return_predictions=False,
+                            )
+                        except:
+                            raise ValueError(
+                                "Model does not have an inbuilt predict step. Attempting to use the predict method with other model types."
+                            )
 
         # read predictions from the files and concatenate them
         # only the first rank process will read the predictions and concatenate them
