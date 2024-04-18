@@ -3,15 +3,13 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
-from datasets import (EnformerDataset, PairwiseClassificationH5Dataset,
-                      PairwiseClassificationH5DatasetDynamicSampling)
+from datasets import (PairwiseRegressionH5Dataset,
+                      PairwiseRegressionH5DatasetDynamicSampling)
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.utilities.combined_loader import CombinedLoader
-from models import \
-    PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision
+from models import PairwiseRegressionFloatPrecision
 
 np.random.seed(97)
 torch.manual_seed(97)
@@ -22,7 +20,6 @@ def parse_args():
     parser = ArgumentParser()
     parser.add_argument("train_data_path", type=str)
     parser.add_argument("val_data_path", type=str)
-    parser.add_argument("enformer_data_path", type=str)
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
@@ -46,70 +43,25 @@ def parse_args():
 def main():
     args = parse_args()
 
-    pairwise_train_ds = PairwiseClassificationH5DatasetDynamicSampling(
+    pairwise_train_ds = PairwiseRegressionH5DatasetDynamicSampling(
         args.train_data_path,
         n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
         random_seed=args.data_seed,
     )
-    pairwise_val_ds = PairwiseClassificationH5Dataset(
+    pairwise_val_ds = PairwiseRegressionH5Dataset(
         args.val_data_path,
         n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
     )
 
-    human_enformer_train_ds = EnformerDataset(
-        args.enformer_data_path,
-        species="human",
-        split="train",
-        reverse_complement=True,
-        random_shift=True,
-    )
-    human_enformer_val_ds = EnformerDataset(
-        args.enformer_data_path,
-        species="human",
-        split="val",
-        reverse_complement=False,
-        random_shift=False,
+    train_dl = torch.utils.data.DataLoader(
+        pairwise_train_ds, batch_size=args.batch_size, shuffle=True
     )
 
-    mouse_enformer_train_ds = EnformerDataset(
-        args.enformer_data_path,
-        species="mouse",
-        split="train",
-        reverse_complement=True,
-        random_shift=True,
+    val_dl = torch.utils.data.DataLoader(
+        pairwise_val_ds, batch_size=args.batch_size, shuffle=False
     )
-    mouse_enformer_val_ds = EnformerDataset(
-        args.enformer_data_path,
-        species="mouse",
-        split="val",
-        reverse_complement=False,
-        random_shift=False,
-    )
-
-    train_dl = CombinedLoader(
-        [
-            torch.utils.data.DataLoader(
-                pairwise_train_ds, batch_size=args.batch_size, shuffle=True
-            ),
-            torch.utils.data.DataLoader(
-                human_enformer_train_ds, batch_size=args.batch_size
-            ),
-            torch.utils.data.DataLoader(
-                mouse_enformer_train_ds, batch_size=args.batch_size
-            ),
-        ],
-        mode="max_size_cycle",
-    )
-
-    val_dl = [
-        torch.utils.data.DataLoader(
-            pairwise_val_ds, batch_size=args.batch_size, shuffle=False
-        ),
-        torch.utils.data.DataLoader(human_enformer_val_ds, batch_size=args.batch_size),
-        torch.utils.data.DataLoader(mouse_enformer_val_ds, batch_size=args.batch_size),
-    ]
 
     run_save_dir = os.path.join(
         args.save_dir, args.run_name + f"_data_seed_{args.data_seed}"
@@ -130,16 +82,16 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_classification_loss/dataloader_idx_0:.4f}-val_acc={val/pairwise_classification_accuracy/dataloader_idx_0:.4f}",
-        monitor="val/pairwise_classification_accuracy/dataloader_idx_0",
-        mode="max",
+        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_regression_loss:.4f}",
+        monitor="val/pairwise_regression_loss",
+        mode="min",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/pairwise_classification_accuracy/dataloader_idx_0",
-        mode="max",
+        monitor="val/pairwise_regression_loss",
+        mode="min",
         patience=5,
     )
 
@@ -176,10 +128,10 @@ def main():
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)
         ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
-        strategy="ddp",
+        strategy="ddp_find_unused_parameters_true",
     )
 
-    model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
+    model = PairwiseRegressionFloatPrecision(
         lr=args.lr,
         weight_decay=args.weight_decay,
         use_scheduler=args.use_scheduler,
