@@ -33,10 +33,11 @@ def get_genotype_matrix(
     """
     Returns a genotype matrix for the given region. Dataframe is of shape [n_variants, n_samples]
     """
+    assert context_size % 2 == 0
     chrom = chrom.replace("chr", "")
     start = tss_pos - context_size // 2
     start = max(start, 1)
-    end = tss_pos + context_size - 1
+    end = tss_pos + context_size // 2 - 1
 
     # Get variants in the region using tabix
     vcf_path = os.path.join(
