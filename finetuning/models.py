@@ -761,6 +761,19 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
                 weight_decay=self.hparams.weight_decay,
             )
 
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
+
         return optimizer
 
 
@@ -938,6 +951,19 @@ class PairwiseRegressionFloatPrecision(L.LightningModule):
                 lr=self.hparams.lr,
                 weight_decay=self.hparams.weight_decay,
             )
+
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
 
         return optimizer
 
@@ -1437,6 +1463,19 @@ class SingleRegressionFloatPrecision(L.LightningModule):
                 lr=self.hparams.lr,
                 weight_decay=self.hparams.weight_decay,
             )
+
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
 
         return optimizer
 
