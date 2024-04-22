@@ -88,11 +88,9 @@ def make_predictions(model, X, track_idx: int = 5110) -> np.ndarray:
     return outs.cpu().numpy()
 
 
-def make_predictions_on_variants(
-    model, variants, fasta_path, seqlen, use_ref, rc, batch_size, device
-):
-    ds = Dataset(variants, fasta_path, seqlen, use_ref, rc)
-    dl = torch.utils.data.DataLoader(ds, batch_size=batch_size, num_workers=1)
+def make_predictions_on_variants(model, variants, use_ref, rc, device, args):
+    ds = Dataset(variants, args.fasta_path, args.seqlen, use_ref, rc)
+    dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size, num_workers=1)
     variant_preds = {}
     for batch in tqdm(dl):
         seqs = batch["seq"].to(device)
@@ -112,6 +110,7 @@ def main():
 
     device = torch.device("cuda")
     model = Enformer.from_pretrained("EleutherAI/enformer-official-rough").to(device)
+    model.eval()
 
     for i in range(args.n_genes):
         gene = genes[i]
@@ -122,45 +121,17 @@ def main():
         variants = genotype_mtx.index.tolist()
 
         ref_forward_preds = make_predictions_on_variants(
-            model,
-            variants,
-            args.fasta_path,
-            args.seqlen,
-            True,
-            False,
-            args.batch_size,
-            device,
+            model, variants, True, False, device, args
         )
         ref_reverse_preds = make_predictions_on_variants(
-            model,
-            variants,
-            args.fasta_path,
-            args.seqlen,
-            True,
-            True,
-            args.batch_size,
-            device,
+            model, variants, True, True, device, args
         )
 
         alt_forward_preds = make_predictions_on_variants(
-            model,
-            variants,
-            args.fasta_path,
-            args.seqlen,
-            False,
-            False,
-            args.batch_size,
-            device,
+            model, variants, False, False, device, args
         )
         alt_reverse_preds = make_predictions_on_variants(
-            model,
-            variants,
-            args.fasta_path,
-            args.seqlen,
-            False,
-            True,
-            args.batch_size,
-            device,
+            model, variants, False, True, device, args
         )
 
         results_df = pd.DataFrame(

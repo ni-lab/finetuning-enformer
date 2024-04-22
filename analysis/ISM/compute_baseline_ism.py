@@ -104,6 +104,7 @@ def main():
     model = Enformer.from_pretrained(
         "EleutherAI/enformer-official-rough", target_length=args.seqlen // 128
     ).to(device)
+    model.eval()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
