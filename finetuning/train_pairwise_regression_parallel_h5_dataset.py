@@ -31,6 +31,11 @@ def parse_args():
     parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--max_epochs", type=int, default=50)
+    parser.add_argument("--reverse_complement_prob", type=float, default=0.5)
+    parser.add_argument(
+        "--do_not_random_shift", action=BooleanOptionalAction, default=False
+    )
+    parser.add_argument("--random_shift_max", type=int, default=3)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     parser.add_argument("--data_seed", type=int, default=42)
@@ -43,16 +48,25 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if args.do_not_random_shift:
+        print("Not using random shift.")
+        args.random_shift_max = 0
+
     pairwise_train_ds = PairwiseRegressionH5DatasetDynamicSampling(
         args.train_data_path,
         n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
         random_seed=args.data_seed,
+        reverse_complement_prob=args.reverse_complement_prob,
+        random_shift=not args.do_not_random_shift,
+        random_shift_max=args.random_shift_max,
     )
     pairwise_val_ds = PairwiseRegressionH5Dataset(
         args.val_data_path,
         n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
+        return_reverse_complement=args.reverse_complement_prob > 0.0,
+        shift_max=0,
     )
 
     train_dl = torch.utils.data.DataLoader(
@@ -64,7 +78,9 @@ def main():
     )
 
     run_save_dir = os.path.join(
-        args.save_dir, args.run_name + f"_data_seed_{args.data_seed}"
+        args.save_dir,
+        args.run_name
+        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
     )
     os.makedirs(run_save_dir, exist_ok=True)
 
@@ -76,7 +92,8 @@ def main():
 
     logger = WandbLogger(
         project="enformer-finetune",
-        name=args.run_name + f"_data_seed_{args.data_seed}",
+        name=args.run_name
+        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
         save_dir=logs_dir,
     )
 

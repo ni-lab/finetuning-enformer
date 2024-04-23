@@ -28,25 +28,23 @@ class AttentionPool(nn.Module):
         return output
 
 
-class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
-    L.LightningModule
-):
+class BaseModule(L.LightningModule):
     def __init__(
         self,
         lr: float,
         weight_decay: float,
         use_scheduler: bool,
         warmup_steps: int,
-        n_total_bins: int,
-        pairwise_output_head_upweight_factor: float = 1.0,  # this is so that the pairwise output is upweighted to have the same influence on the loss as the rest of the outputs
-        sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
-        pairwise_output_head_name="human",
-        pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.use_scheduler = use_scheduler
+        self.warmup_steps = warmup_steps
+
         if checkpoint is None:
             self.base = BaseEnformer.from_pretrained(
                 "EleutherAI/enformer-official-rough"
@@ -54,8 +52,6 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
         else:
             checkpoint = torch.load(checkpoint)
             new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
             if state_dict_subset_prefix is not None:
                 print(
                     "Loading subset of state dict from checkpoint, key prefix: ",
@@ -72,6 +68,59 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 "EleutherAI/enformer-official-rough"
             )
             self.base.load_state_dict(new_state_dict)
+
+    def configure_optimizers(self):
+        if self.hparams.weight_decay is None:
+            optimizer = torch.optim.Adam(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                filter(lambda p: p.requires_grad, self.parameters()),
+                lr=self.hparams.lr,
+                weight_decay=self.hparams.weight_decay,
+            )
+
+        if self.hparams.use_scheduler:
+            scheduler = LinearWarmupCosineAnnealingLR(
+                optimizer,
+                warmup_epochs=self.hparams.warmup_steps,
+                max_epochs=self.trainer.max_steps,
+            )
+            scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            }
+            return [optimizer], [scheduler_config]
+
+        return optimizer
+
+
+class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
+        n_total_bins: int,
+        pairwise_output_head_upweight_factor: float = 1.0,  # this is so that the pairwise output is upweighted to have the same influence on the loss as the rest of the outputs
+        sum_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+        pairwise_output_head_name="human",
+        pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
+    ):
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         self.pairwise_output_head_name = pairwise_output_head_name
         self.pairwise_output_head_ind = pairwise_output_head_ind
@@ -443,12 +492,13 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                     }
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
+                true_idx = batch["true_idx"]
                 Y_hat = self(X)
                 if "y" in batch:
                     Y = batch["y"].float()
-                    return {"Y_hat": Y_hat, "Y": Y}
+                    return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat}
+                    return {"Y_hat": Y_hat, "true_idx": true_idx}
             else:
                 raise ValueError("Invalid batch")
 
@@ -470,36 +520,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
             else:
                 return Y_hat
 
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
 
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
-
-
-class PairwiseClassificationFloatPrecision(L.LightningModule):
+class PairwiseClassificationFloatPrecision(BaseModule):
     def __init__(
         self,
         lr: float,
@@ -513,33 +535,14 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         self.pairwise_output_head_name = pairwise_output_head_name
         self.pairwise_output_head_ind = pairwise_output_head_ind
@@ -741,43 +744,16 @@ class PairwiseClassificationFloatPrecision(L.LightningModule):
                 }
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
+            true_idx = batch["true_idx"]
             Y_hat = self(X)
             if "Y" in batch:
                 Y = batch["Y"].float()
-                return {"Y_hat": Y_hat, "Y": Y}
+                return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat}
-
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
-
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
+                return {"Y_hat": Y_hat, "true_idx": true_idx}
 
 
-class PairwiseRegressionFloatPrecision(L.LightningModule):
+class PairwiseRegressionFloatPrecision(BaseModule):
     def __init__(
         self,
         lr: float,
@@ -789,33 +765,14 @@ class PairwiseRegressionFloatPrecision(L.LightningModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
     ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
@@ -932,45 +889,16 @@ class PairwiseRegressionFloatPrecision(L.LightningModule):
                 }
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
+            true_idx = batch["true_idx"]
             Y_hat = self(X)
             if "z" in batch:
                 Y = batch["z"].float()
-                return {"Y_hat": Y_hat, "Y": Y}
+                return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat}
-
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
-
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
+                return {"Y_hat": Y_hat, "true_idx": true_idx}
 
 
-class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
-    L.LightningModule
-):
+class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(BaseModule):
     def __init__(
         self,
         lr: float,
@@ -982,33 +910,14 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
         checkpoint=None,
         state_dict_subset_prefix=None,
     ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
@@ -1285,12 +1194,13 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
 
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
+                true_idx = batch["true_idx"]
                 Y_hat = self(X)
                 if "y" in batch:
                     Y = batch["y"].float()
-                    return {"Y_hat": Y_hat, "Y": Y}
+                    return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat}
+                    return {"Y_hat": Y_hat, "true_idx": true_idx}
 
             else:
                 raise ValueError("Invalid batch")
@@ -1313,36 +1223,8 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(
             else:
                 return Y_hat
 
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
 
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
-
-
-class SingleRegressionFloatPrecision(L.LightningModule):
+class SingleRegressionFloatPrecision(BaseModule):
     def __init__(
         self,
         lr: float,
@@ -1354,33 +1236,14 @@ class SingleRegressionFloatPrecision(L.LightningModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
     ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
@@ -1444,43 +1307,16 @@ class SingleRegressionFloatPrecision(L.LightningModule):
 
     def predict_step(self, batch, batch_idx):
         X = batch["seq"]
+        true_idx = batch["true_idx"]
         Y_hat = self(X)
         if "z" in batch:
             Y = batch["z"]
-            return {"Y_hat": Y_hat, "Y": Y}
+            return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat}
-
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
-
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
+            return {"Y_hat": Y_hat, "true_idx": true_idx}
 
 
-class SingleRegressionOnCountsFloatPrecision(L.LightningModule):
+class SingleRegressionOnCountsFloatPrecision(BaseModule):
     def __init__(
         self,
         lr: float,
@@ -1492,33 +1328,14 @@ class SingleRegressionOnCountsFloatPrecision(L.LightningModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
     ):
-        super().__init__()
-        self.save_hyperparameters()
-        if checkpoint is None:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-        else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            # if Enformer is component of a larger model, we can subset the state dict of the larger model using the state_dict_subset_prefix
-            # for the model fine-tuned on MPRA data, prefix is "model.Backbone.model."
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
-                )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
-            else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
 
         enformer_hidden_dim = 2 * self.base.dim
         self.attention_pool = AttentionPool(enformer_hidden_dim)
@@ -1608,37 +1425,10 @@ class SingleRegressionOnCountsFloatPrecision(L.LightningModule):
 
     def predict_step(self, batch, batch_idx):
         X, Y, Z = batch["seq"], batch["y"], batch["z"]
+        true_idx = batch["true_idx"]
         Y_hat = self(X)
         if "y" in batch:
             Y = batch["y"]
-            return {"Y_hat": Y_hat, "Y": Y}
+            return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat}
-
-    def configure_optimizers(self):
-        if self.hparams.weight_decay is None:
-            optimizer = torch.optim.Adam(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                filter(lambda p: p.requires_grad, self.parameters()),
-                lr=self.hparams.lr,
-                weight_decay=self.hparams.weight_decay,
-            )
-
-        if self.hparams.use_scheduler:
-            scheduler = LinearWarmupCosineAnnealingLR(
-                optimizer,
-                warmup_epochs=self.hparams.warmup_steps,
-                max_epochs=self.trainer.max_steps,
-            )
-            scheduler_config = {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-            }
-            return [optimizer], [scheduler_config]
-
-        return optimizer
+            return {"Y_hat": Y_hat, "true_idx": true_idx}
