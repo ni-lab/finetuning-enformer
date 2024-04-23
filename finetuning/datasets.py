@@ -117,7 +117,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             elif shift < 0:
                 seq[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         return {
             "seq": seq,
@@ -253,7 +253,7 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         Y = int(self.Y[seq_idx1] >= self.Y[seq_idx2])
         return {
@@ -374,7 +374,7 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         Y = int(self.Y[idx1] >= self.Y[idx2])
         return {"seq1": seq1, "seq2": seq2, "Y": Y}
@@ -489,7 +489,7 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         return {
             "seq1": seq1,
@@ -594,7 +594,7 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         return {"seq1": seq1, "seq2": seq2, "Y1": self.Y[idx1], "Y2": self.Y[idx2]}
 
@@ -716,7 +716,7 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         z_diff = self.Z[seq_idx1] - self.Z[seq_idx2]
         return {
@@ -830,7 +830,7 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = 0
+            shift = np.zeros(1, dtype=np.int32)
 
         z_diff = self.Z[idx1] - self.Z[idx2]
         return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
