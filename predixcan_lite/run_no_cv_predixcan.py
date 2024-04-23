@@ -1,4 +1,6 @@
+import os
 from argparse import ArgumentParser
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -12,7 +14,7 @@ from tqdm import tqdm
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument("output_preds_path", type=str)
+    parser.add_argument("output_dir", type=str)
     # fmt: off
     parser.add_argument("--counts_path", type=str, default="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
     parser.add_argument("--sample_splits_path", type=str, default="h5_bins_384_chrom_split/sample_splits.h5_bins_384_chrom_split.csv")
@@ -46,7 +48,7 @@ def load_gene_data(
         train_data (dict[str, np.ndarray])
         val_data (dict[str, np.ndarray])
         test_data (dict[str, np.ndarray])
-        variants (list[str])
+        variants (list[Variant])
     """
     train_data, val_data, test_data = {}, {}, {}
 
@@ -80,7 +82,7 @@ def load_gene_data(
     val_data["Y"] = counts_df.loc[gene, val_data["samples"]].to_numpy()
     test_data["Y"] = counts_df.loc[gene, test_data["samples"]].to_numpy()
 
-    return (train_data, val_data, test_data, train_dosage_mtx.index)
+    return (train_data, val_data, test_data, train_dosage_mtx.index.tolist())
 
 
 @ignore_warnings(category=ConvergenceWarning)
@@ -117,6 +119,7 @@ def main():
         columns=sample_splits_df.columns,
         dtype=float,
     )
+    coefs = defaultdict(list)
 
     for gene in tqdm(counts_df.index):
         # Load gene data
@@ -134,7 +137,15 @@ def main():
         )
         preds_df.loc[gene, test_data["samples"]] = model.predict(test_data["X"])
 
-    preds_df.to_csv(args.output_preds_path)
+        assert len(variants) == len(model.coef_)
+        coefs["variant"].extend(variants)
+        coefs["gene"].extend([gene] * len(variants))
+        coefs["beta"].extend(model.coef_)
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    preds_df.to_csv(os.path.join(args.output_dir, "preds.csv"))
+    coefs_df = pd.DataFrame(coefs)
+    coefs_df.to_csv(os.path.join(args.output_dir, "coefs.csv"))
 
 
 if __name__ == "__main__":
