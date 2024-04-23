@@ -217,7 +217,7 @@ def main():
         p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
         p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
         preds.append(p_yhat)
-        true_idxs.append(np.concatenate([batch["true_idxs"] for batch in p]))
+        true_idxs.append(np.concatenate([batch["true_idx"] for batch in p]))
 
         bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
         bi = np.concatenate([inds for inds in bi])
