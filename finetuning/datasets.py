@@ -31,7 +31,14 @@ class RefDataset(torch.utils.data.Dataset):
 
 
 class SampleH5Dataset(torch.utils.data.Dataset):
-    def __init__(self, h5_path: str, seqlen: int, prefetch_seqs: bool = False):
+    def __init__(
+        self,
+        h5_path: str,
+        seqlen: int,
+        prefetch_seqs: bool = False,
+        return_reverse_complement: bool = False,
+        shift_max: int = 0,
+    ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
         very slow (~15 minutes for the training set of h5_bins_384), but speeds up __getitem__.
@@ -42,6 +49,8 @@ class SampleH5Dataset(torch.utils.data.Dataset):
 
         self.h5_file = h5py.File(h5_path, "r")
         self.seqlen = seqlen
+        self.return_reverse_complement = return_reverse_complement
+        self.shift_max = shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -68,7 +77,11 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         return self.seqlen // 128
 
     def __len__(self):
-        return self.seqs.shape[0]
+        return (
+            self.seqs.shape[0]
+            * (2 if self.return_reverse_complement else 1)
+            * ((2 * self.shift_max) + 1)
+        )
 
     def __shorten_seq(self, seq):
         """
@@ -81,10 +94,39 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         return seq[:, start_idx:end_idx, :]
 
     def __getitem__(self, idx):
-        seq = self.__shorten_seq(self.seqs[idx]).astype(np.float32)
-        y = self.Y[idx]
-        z = self.Z[idx]
-        return {"seq": seq, "y": y, "z": z}
+        if self.return_reverse_complement:
+            true_idx = idx // (2 * ((2 * self.shift_max) + 1))
+        else:
+            true_idx = idx // ((2 * self.shift_max) + 1)
+
+        seq = self.__shorten_seq(self.seqs[true_idx]).astype(np.float32)
+        y = self.Y[true_idx]
+        z = self.Z[true_idx]
+
+        if self.return_reverse_complement and (idx % 2 == 1):
+            seq = np.flip(seq, axis=(-1, -2))
+            reverse_complement = True
+        else:
+            reverse_complement = False
+
+        if self.shift_max > 0:
+            shift = ((idx // 2) % (2 * self.shift_max + 1)) - self.shift_max
+            seq = np.roll(seq, shift, axis=-2)
+            if shift > 0:
+                seq[:, :shift, :] = 0
+            elif shift < 0:
+                seq[:, shift:, :] = 0
+
+        return {
+            "seq": seq,
+            "y": y,
+            "z": z,
+            "gene": self.genes[true_idx],
+            "sample": self.samples[true_idx],
+            "true_idx": true_idx,
+            "reverse_complement": reverse_complement,
+            "shift": shift,
+        }
 
 
 class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
@@ -96,6 +138,8 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
         min_percentile_diff: float = 25.0,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        return_reverse_complement: bool = False,
+        shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -110,6 +154,8 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
         self.seqlen = seqlen
         self.min_percentile_diff = min_percentile_diff
         self.rng = np.random.default_rng(random_seed)
+        self.return_reverse_complement = return_reverse_complement
+        self.shift_max = shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -158,7 +204,11 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
         return self.seqlen // 128
 
     def __len__(self):
-        return self.pairs.shape[0]
+        return (
+            self.pairs.shape[0]
+            * (2 if self.return_reverse_complement else 1)
+            * ((2 * self.shift_max) + 1)
+        )
 
     def __shorten_seq(self, seq):
         """
@@ -171,14 +221,48 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
         return seq[:, start_idx:end_idx, :]
 
     def __getitem__(self, idx):
-        seq_idx1, seq_idx2 = self.pairs[idx]
+        if self.return_reverse_complement:
+            true_idx = idx // (2 * ((2 * self.shift_max) + 1))
+        else:
+            true_idx = idx // ((2 * self.shift_max) + 1)
+
+        seq_idx1, seq_idx2 = self.pairs[true_idx]
         assert self.genes[seq_idx1] == self.genes[seq_idx2]
         assert self.samples[seq_idx1] != self.samples[seq_idx2]
 
         seq1 = self.__shorten_seq(self.seqs[seq_idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
+
+        if self.return_reverse_complement and idx % 2 == 1:
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+            reverse_complement = True
+        else:
+            reverse_complement = False
+
+        if self.shift_max > 0:
+            shift = ((idx // 2) % (2 * self.shift_max + 1)) - self.shift_max
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
         Y = int(self.Y[seq_idx1] >= self.Y[seq_idx2])
-        return {"seq1": seq1, "seq2": seq2, "Y": Y}
+        return {
+            "seq1": seq1,
+            "seq2": seq2,
+            "Y": Y,
+            "gene": self.genes[seq_idx1],
+            "sample1": self.samples[seq_idx1],
+            "sample2": self.samples[seq_idx2],
+            "true_idx": true_idx,
+            "reverse_complement": reverse_complement,
+            "shift": shift,
+        }
 
 
 class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
@@ -190,6 +274,9 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         min_percentile_diff: float = 25.0,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        reverse_complement_prob: float = 0.0,
+        random_shift: bool = False,
+        random_shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -204,6 +291,9 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         self.seqlen = seqlen
         self.min_percentile_diff = min_percentile_diff
         self.rng = np.random.default_rng(random_seed)
+        self.reverse_complement_prob = reverse_complement_prob
+        self.random_shift = random_shift
+        self.random_shift_max = random_shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -260,6 +350,26 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         seq1 = self.__shorten_seq(self.seqs[idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
+
+        if self.rng.random() < self.reverse_complement_prob:
+            # flip along the sequence length and the one-hot encoding axis -
+            # this is the reverse complement as the one-hot encoding is in the order ACGT
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+
+        if self.random_shift:
+            shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+
+            # zero out the shifted positions
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
         Y = int(self.Y[idx1] >= self.Y[idx2])
         return {"seq1": seq1, "seq2": seq2, "Y": Y}
 
@@ -272,6 +382,8 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
         seqlen: int,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        return_reverse_complement: bool = False,
+        shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -285,6 +397,8 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
         self.n_pairs_per_gene = n_pairs_per_gene
         self.seqlen = seqlen
         self.rng = np.random.default_rng(random_seed)
+        self.return_reverse_complement = return_reverse_complement
+        self.shift_max = shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -304,7 +418,12 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
         return self.seqlen // 128
 
     def __len__(self):
-        return self.n_pairs_per_gene * len(np.unique(self.genes))
+        return (
+            self.n_pairs_per_gene
+            * len(np.unique(self.genes))
+            * (2 if self.return_reverse_complement else 1)
+            * ((2 * self.shift_max) + 1)
+        )
 
     def __shorten_seq(self, seq):
         """
@@ -334,13 +453,48 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
         return pairs
 
     def __getitem__(self, idx):
-        idx1, idx2 = self.pairs[idx]
+        if self.return_reverse_complement:
+            true_idx = idx // (2 * ((2 * self.shift_max) + 1))
+        else:
+            true_idx = idx // ((2 * self.shift_max) + 1)
+
+        idx1, idx2 = self.pairs[true_idx]
         assert self.genes[idx1] == self.genes[idx2]
         assert self.samples[idx1] != self.samples[idx2]
 
         seq1 = self.__shorten_seq(self.seqs[idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
-        return {"seq1": seq1, "seq2": seq2, "Y1": self.Y[idx1], "Y2": self.Y[idx2]}
+
+        if self.return_reverse_complement and idx % 2 == 1:
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+            reverse_complement = True
+        else:
+            reverse_complement = False
+
+        if self.shift_max > 0:
+            shift = ((idx // 2) % (2 * self.shift_max + 1)) - self.shift_max
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
+        return {
+            "seq1": seq1,
+            "seq2": seq2,
+            "Y1": self.Y[idx1],
+            "Y2": self.Y[idx2],
+            "gene": self.genes[idx1],
+            "sample1": self.samples[idx1],
+            "sample2": self.samples[idx2],
+            "true_idx": true_idx,
+            "reverse_complement": reverse_complement,
+            "shift": shift,
+        }
 
 
 class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Dataset):
@@ -351,6 +505,9 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
         seqlen: int,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        reverse_complement_prob: float = 0.0,
+        random_shift: bool = False,
+        random_shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -364,6 +521,9 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
         self.n_pairs_per_gene = n_pairs_per_gene
         self.seqlen = seqlen
         self.rng = np.random.default_rng(random_seed)
+        self.reverse_complement_prob = reverse_complement_prob
+        self.random_shift = random_shift
+        self.random_shift_max = random_shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -406,6 +566,26 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
 
         seq1 = self.__shorten_seq(self.seqs[idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
+
+        if self.rng.random() < self.reverse_complement_prob:
+            # flip along the sequence length and the one-hot encoding axis -
+            # this is the reverse complement as the one-hot encoding is in the order ACGT
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+
+        if self.random_shift:
+            shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+
+            # zero out the shifted positions
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
         return {"seq1": seq1, "seq2": seq2, "Y1": self.Y[idx1], "Y2": self.Y[idx2]}
 
 
@@ -417,6 +597,8 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         seqlen: int,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        return_reverse_complement: bool = False,
+        shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -430,6 +612,8 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         self.n_pairs_per_gene = n_pairs_per_gene
         self.seqlen = seqlen
         self.rng = np.random.default_rng(random_seed)
+        self.return_reverse_complement = return_reverse_complement
+        self.shift_max = shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -475,7 +659,11 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         return self.seqlen // 128
 
     def __len__(self):
-        return self.pairs.shape[0]
+        return (
+            self.pairs.shape[0]
+            * (2 if self.return_reverse_complement else 1)
+            * ((2 * self.shift_max) + 1)
+        )
 
     def __shorten_seq(self, seq):
         """
@@ -488,14 +676,48 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         return seq[:, start_idx:end_idx, :]
 
     def __getitem__(self, idx):
-        seq_idx1, seq_idx2 = self.pairs[idx]
+        if self.return_reverse_complement:
+            true_idx = idx // (2 * ((2 * self.shift_max) + 1))
+        else:
+            true_idx = idx // ((2 * self.shift_max) + 1)
+
+        seq_idx1, seq_idx2 = self.pairs[true_idx]
         assert self.genes[seq_idx1] == self.genes[seq_idx2]
         assert self.samples[seq_idx1] != self.samples[seq_idx2]
 
         seq1 = self.__shorten_seq(self.seqs[seq_idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
+
+        if self.return_reverse_complement and idx % 2 == 1:
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+            reverse_complement = True
+        else:
+            reverse_complement = False
+
+        if self.shift_max > 0:
+            shift = ((idx // 2) % (2 * self.shift_max + 1)) - self.shift_max
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
         z_diff = self.Z[seq_idx1] - self.Z[seq_idx2]
-        return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
+        return {
+            "seq1": seq1,
+            "seq2": seq2,
+            "z_diff": z_diff,
+            "gene": self.genes[seq_idx1],
+            "sample1": self.samples[seq_idx1],
+            "sample2": self.samples[seq_idx2],
+            "true_idx": true_idx,
+            "reverse_complement": reverse_complement,
+            "shift": shift,
+        }
 
 
 class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
@@ -506,6 +728,9 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
         seqlen: int,
         prefetch_seqs: bool = False,
         random_seed: int = 42,
+        reverse_complement_prob: float = 0.0,
+        random_shift: bool = False,
+        random_shift_max: int = 0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -519,6 +744,9 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
         self.n_pairs_per_gene = n_pairs_per_gene
         self.seqlen = seqlen
         self.rng = np.random.default_rng(random_seed)
+        self.reverse_complement_prob = reverse_complement_prob
+        self.random_shift = random_shift
+        self.random_shift_max = random_shift_max
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -570,6 +798,26 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         seq1 = self.__shorten_seq(self.seqs[idx1].astype(np.float32))
         seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
+
+        if self.rng.random() < self.reverse_complement_prob:
+            # flip along the sequence length and the one-hot encoding axis -
+            # this is the reverse complement as the one-hot encoding is in the order ACGT
+            seq1 = np.flip(seq1, axis=(-1, -2))
+            seq2 = np.flip(seq2, axis=(-1, -2))
+
+        if self.random_shift:
+            shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
+            seq1 = np.roll(seq1, shift, axis=-2)
+            seq2 = np.roll(seq2, shift, axis=-2)
+
+            # zero out the shifted positions
+            if shift > 0:
+                seq1[:, :shift, :] = 0
+                seq2[:, :shift, :] = 0
+            elif shift < 0:
+                seq1[:, shift:, :] = 0
+                seq2[:, shift:, :] = 0
+
         z_diff = self.Z[idx1] - self.Z[idx2]
         return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
 
