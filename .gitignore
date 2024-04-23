@@ -162,7 +162,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+*.h5
 *.npz
 wandb/
 process_geuvadis_data/rpkm/peer/
-*.h5
+linear_methods/data/genotypes/1Mb
