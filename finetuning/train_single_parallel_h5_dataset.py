@@ -59,7 +59,7 @@ def main():
         args.train_data_path,
         seqlen=args.seqlen,
         reverse_complement_prob=args.reverse_complement_prob,
-        random_shift=not args.do_not_shift,
+        random_shift=not args.do_not_random_shift,
         random_shift_max=args.random_shift_max,
     )
 

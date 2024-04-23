@@ -211,22 +211,36 @@ def main():
             torch.distributed.barrier()
 
     preds = []
+    true_idxs = []
     batch_indices = []
     for i in range(n_gpus):
         p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
         p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
         preds.append(p_yhat)
+        true_idxs.append(np.concatenate([batch["true_idxs"] for batch in p]))
 
         bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
         bi = np.concatenate([inds for inds in bi])
         batch_indices.append(bi)
 
     test_preds = np.concatenate(preds, axis=0)
+    true_idxs = np.concatenate(true_idxs, axis=0)
     batch_indices = np.concatenate(batch_indices, axis=0)
 
-    # sort the predictions and batch_indices based on the original order
+    # sort the predictions, true_idxs and batch_indices based on the original order
     sorted_idxs = np.argsort(batch_indices)
     test_preds = test_preds[sorted_idxs]
+    true_idxs = true_idxs[sorted_idxs]
+
+    # now average the predictions that have the same true index
+    unique_true_idxs = np.unique(true_idxs)
+    unique_true_idxs = np.sort(unique_true_idxs)
+    averaged_preds = []
+    for idx in unique_true_idxs:
+        idx_mask = true_idxs == idx
+        avg_pred = np.mean(test_preds[idx_mask], axis=0)
+        averaged_preds.append(avg_pred)
+    test_preds = np.array(averaged_preds)
 
     assert test_preds.size == test_ds.genes.size
     test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
