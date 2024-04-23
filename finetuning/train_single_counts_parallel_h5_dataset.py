@@ -29,11 +29,11 @@ def parse_args():
     parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
     parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
+    parser.add_argument("--reverse_complement_prob", type=float, default=0.5)
     parser.add_argument(
-        "--do_not_reverse_complement", action=BooleanOptionalAction, default=False
+        "--do_not_random_shift", action=BooleanOptionalAction, default=False
     )
-    parser.add_argument("--do_not_shift", action=BooleanOptionalAction, default=False)
-    parser.add_argument("--shift_max", type=int, default=3)
+    parser.add_argument("--random_shift_max", type=int, default=3)
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
@@ -58,14 +58,15 @@ def main():
     train_ds = SampleH5Dataset(
         args.train_data_path,
         seqlen=args.seqlen,
-        return_reverse_complement=not args.do_not_reverse_complement,
-        shift_max=args.shift_max,
+        reverse_complement_prob=args.reverse_complement_prob,
+        random_shift=not args.do_not_shift,
+        random_shift_max=args.random_shift_max,
     )
 
     val_ds = SampleH5Dataset(
         args.val_data_path,
         seqlen=args.seqlen,
-        return_reverse_complement=not args.do_not_reverse_complement,
+        return_reverse_complement=(args.reverse_complement_prob > 0.0),
         shift_max=0,
     )
 

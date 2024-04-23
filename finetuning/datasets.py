@@ -36,6 +36,9 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         h5_path: str,
         seqlen: int,
         prefetch_seqs: bool = False,
+        reverse_complement_prob: float = 0.0,
+        random_shift: bool = False,
+        random_shift_max: int = 0,
         return_reverse_complement: bool = False,
         shift_max: int = 0,
     ):
@@ -49,8 +52,28 @@ class SampleH5Dataset(torch.utils.data.Dataset):
 
         self.h5_file = h5py.File(h5_path, "r")
         self.seqlen = seqlen
+
+        # used in train mode
+        self.reverse_complement_prob = reverse_complement_prob
+        self.random_shift = random_shift
+        self.random_shift_max = random_shift_max
+
+        # used in val mode
         self.return_reverse_complement = return_reverse_complement
         self.shift_max = shift_max
+
+        if self.return_reverse_complement or self.reverse_complement_prob > 0.0:
+            assert (
+                self.return_reverse_complement and self.reverse_complement_prob == 0.0
+            ) or (
+                not self.return_reverse_complement
+                and self.reverse_complement_prob > 0.0
+            ), "return_reverse_complement and reverse_complement_prob must be mutually exclusive - either return_reverse_complement is True and reverse_complement_prob is 0.0 or return_reverse_complement is False and reverse_complement_prob is > 0.0"
+
+        if self.random_shift or self.shift_max > 0:
+            assert (self.random_shift and shift_max == 0) or (
+                not self.random_shift and shift_max > 0
+            ), "random_shift and shift_max must be mutually exclusive - either random_shift is True and shift_max is 0 or random_shift is False and shift_max is > 0"
 
         # Load everything into memory
         self.genes = self.h5_file["genes"][:].astype(str)
@@ -103,13 +126,24 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         y = self.Y[true_idx]
         z = self.Z[true_idx]
 
-        if self.return_reverse_complement and (idx % 2 == 1):
+        reverse_complement = False
+        if self.reverse_complement_prob > 0.0:
+            if np.random.random() < self.reverse_complement_prob:
+                seq = np.flip(seq, axis=(-1, -2)).copy()
+                reverse_complement = True
+        elif self.return_reverse_complement and (idx % 2 == 1):
             seq = np.flip(seq, axis=(-1, -2)).copy()
             reverse_complement = True
-        else:
-            reverse_complement = False
 
-        if self.shift_max > 0:
+        if self.random_shift:
+            shift = np.random.randint(-self.random_shift_max, self.random_shift_max + 1)
+            seq = np.roll(seq, shift, axis=-2)
+            # zero out the shifted positions
+            if shift > 0:
+                seq[:, :shift, :] = 0
+            elif shift < 0:
+                seq[:, shift:, :] = 0
+        elif self.shift_max > 0:
             shift = ((idx // 2) % (2 * self.shift_max + 1)) - self.shift_max
             seq = np.roll(seq, shift, axis=-2)
             if shift > 0:
