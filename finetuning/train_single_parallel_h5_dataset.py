@@ -47,9 +47,9 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if args.do_not_shift:
+    if args.do_not_random_shift:
         print("Not using random shift.")
-        args.shift_max = 0
+        args.random_shift_max = 0
 
     # set seed
     torch.manual_seed(args.data_seed)
@@ -81,7 +81,7 @@ def main():
     run_save_dir = os.path.join(
         args.save_dir,
         args.run_name
-        + f"_data_seed_{args.data_seed}_rc_{not args.do_not_reverse_complement}_shiftmax_{args.shift_max}",
+        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
     )
     os.makedirs(run_save_dir, exist_ok=True)
 
@@ -94,7 +94,7 @@ def main():
     logger = WandbLogger(
         project="enformer-finetune",
         name=args.run_name
-        + f"_data_seed_{args.data_seed}_rc_{not args.do_not_reverse_complement}_shiftmax_{args.shift_max}",
+        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
         save_dir=logs_dir,
     )
 
