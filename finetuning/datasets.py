@@ -104,7 +104,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         z = self.Z[true_idx]
 
         if self.return_reverse_complement and (idx % 2 == 1):
-            seq = np.flip(seq, axis=(-1, -2))
+            seq = np.flip(seq, axis=(-1, -2)).copy()
             reverse_complement = True
         else:
             reverse_complement = False
@@ -117,7 +117,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             elif shift < 0:
                 seq[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         return {
             "seq": seq,
@@ -236,8 +236,8 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
         seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
 
         if self.return_reverse_complement and idx % 2 == 1:
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
             reverse_complement = True
         else:
             reverse_complement = False
@@ -253,7 +253,7 @@ class PairwiseClassificationH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         Y = int(self.Y[seq_idx1] >= self.Y[seq_idx2])
         return {
@@ -358,8 +358,8 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         if self.rng.random() < self.reverse_complement_prob:
             # flip along the sequence length and the one-hot encoding axis -
             # this is the reverse complement as the one-hot encoding is in the order ACGT
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
 
         if self.random_shift:
             shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
@@ -374,7 +374,7 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         Y = int(self.Y[idx1] >= self.Y[idx2])
         return {"seq1": seq1, "seq2": seq2, "Y": Y}
@@ -472,8 +472,8 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
         seq2 = self.__shorten_seq(self.seqs[idx2].astype(np.float32))
 
         if self.return_reverse_complement and idx % 2 == 1:
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
             reverse_complement = True
         else:
             reverse_complement = False
@@ -489,7 +489,7 @@ class PairwiseRegressionOnCountsH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         return {
             "seq1": seq1,
@@ -578,8 +578,8 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
         if self.rng.random() < self.reverse_complement_prob:
             # flip along the sequence length and the one-hot encoding axis -
             # this is the reverse complement as the one-hot encoding is in the order ACGT
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
 
         if self.random_shift:
             shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
@@ -594,7 +594,7 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         return {"seq1": seq1, "seq2": seq2, "Y1": self.Y[idx1], "Y2": self.Y[idx2]}
 
@@ -699,8 +699,8 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
         seq2 = self.__shorten_seq(self.seqs[seq_idx2].astype(np.float32))
 
         if self.return_reverse_complement and idx % 2 == 1:
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
             reverse_complement = True
         else:
             reverse_complement = False
@@ -716,7 +716,7 @@ class PairwiseRegressionH5Dataset(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         z_diff = self.Z[seq_idx1] - self.Z[seq_idx2]
         return {
@@ -814,8 +814,8 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
         if self.rng.random() < self.reverse_complement_prob:
             # flip along the sequence length and the one-hot encoding axis -
             # this is the reverse complement as the one-hot encoding is in the order ACGT
-            seq1 = np.flip(seq1, axis=(-1, -2))
-            seq2 = np.flip(seq2, axis=(-1, -2))
+            seq1 = np.flip(seq1, axis=(-1, -2)).copy()
+            seq2 = np.flip(seq2, axis=(-1, -2)).copy()
 
         if self.random_shift:
             shift = self.rng.integers(-self.random_shift_max, self.random_shift_max + 1)
@@ -830,7 +830,7 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
                 seq1[:, shift:, :] = 0
                 seq2[:, shift:, :] = 0
         else:
-            shift = np.zeros(1, dtype=np.int32)
+            shift = 0
 
         z_diff = self.Z[idx1] - self.Z[idx2]
         return {"seq1": seq1, "seq2": seq2, "z_diff": z_diff}
