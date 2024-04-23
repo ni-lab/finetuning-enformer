@@ -66,7 +66,7 @@ def main():
         args.val_data_path,
         seqlen=args.seqlen,
         return_reverse_complement=not args.do_not_reverse_complement,
-        shift_max=args.shift_max,
+        shift_max=0,
     )
 
     train_dl = torch.utils.data.DataLoader(

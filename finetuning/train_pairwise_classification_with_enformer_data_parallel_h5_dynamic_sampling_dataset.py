@@ -69,7 +69,7 @@ def main():
         n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
         return_reverse_complement=args.reverse_complement_prob > 0.0,
-        shift_max=args.random_shift_max,
+        shift_max=0,
     )
 
     human_enformer_train_ds = EnformerDataset(
