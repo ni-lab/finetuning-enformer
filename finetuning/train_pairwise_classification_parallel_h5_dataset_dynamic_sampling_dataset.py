@@ -78,7 +78,9 @@ def main():
     )
 
     run_save_dir = os.path.join(
-        args.save_dir, args.run_name + f"_data_seed_{args.data_seed}"
+        args.save_dir,
+        args.run_name
+        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
     )
     os.makedirs(run_save_dir, exist_ok=True)
 

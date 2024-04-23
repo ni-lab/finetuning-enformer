@@ -91,7 +91,8 @@ def main():
 
     logger = WandbLogger(
         project="enformer-finetune",
-        name=args.run_name + f"_data_seed_{args.data_seed}",
+        name=args.run_name
+        + f"_data_seed_{args.data_seed}_rc_{not args.do_not_reverse_complement}_shiftmax_{args.shift_max}",
         save_dir=logs_dir,
     )
 
