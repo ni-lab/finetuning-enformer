@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument("predictions_dir", type=str)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--use_reverse_complement", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -63,7 +64,11 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    test_ds = SampleH5Dataset(args.test_data_path, seqlen=args.seqlen)
+    test_ds = SampleH5Dataset(
+        args.test_data_path,
+        seqlen=args.seqlen,
+        return_reverse_complement=args.use_reverse_complement,
+    )
 
     test_dl = torch.utils.data.DataLoader(
         test_ds, batch_size=args.batch_size, shuffle=False
