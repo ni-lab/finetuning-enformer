@@ -81,7 +81,7 @@ def main():
     run_save_dir = os.path.join(
         args.save_dir,
         args.run_name
-        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
     )
     os.makedirs(run_save_dir, exist_ok=True)
 
@@ -94,7 +94,7 @@ def main():
     logger = WandbLogger(
         project="enformer-finetune",
         name=args.run_name
-        + f"_data_seed_{args.data_seed}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
         save_dir=logs_dir,
     )
 
