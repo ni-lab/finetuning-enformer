@@ -17,40 +17,59 @@ from lightning.pytorch.loggers import WandbLogger
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, h5_path: str):
+        self.h5_path = h5_path
+
         self.genes = []
-        self.samples = {}  # gene -> (n_samples,)
-        self.features = {}  # gene -> (n_samples, n_variants)
-        self.meta_features = {}  # gene -> (n_variants, n_meta_features)
-        self.Y = {}  # gene -> (n_samples,)
+        self.samples_per_gene = {}  # gene -> (n_samples,)
+        self.X_per_gene = {}  # gene -> (n_samples, n_variants)
+        self.F_per_gene = {}  # gene -> (n_variants, n_meta_features)
+        self.Y_per_gene = {}  # gene -> (n_samples,)
         with h5py.File(h5_path, "r") as f:
+            self.max_n_variants = max(f[g]["variants"].shape[1] for g in f["genes"])
             for g in sorted(f["genes"][:].astype(str)):
-                if f[g]["variants"].shape[0] == 0:
-                    continue
-                g_renamed = g.replace(".", "_")  # module name cannot contain "."
-                self.genes.append(g_renamed)
-                self.samples[g_renamed] = f[g]["samples"][:].astype(str)
-                self.features[g_renamed] = f[g]["dosages"][:].astype(np.float32)
-                self.meta_features[g_renamed] = f[g]["meta_features"][:].astype(
-                    np.float32
+                g_prime = g.replace(".", "_")  # module name cannot contain "."
+                self.genes.append(g_prime)
+                self.samples_per_gene[g_prime] = f[g]["samples"][:].astype(str)
+
+                # Pad features with zeros
+                X = f[g]["dosages"][:].astype(np.float32)
+                X_pad = np.zeros(
+                    (X.shape[0], self.max_n_variants - X.shape[1]), dtype=np.float32
                 )
-                self.Y[g_renamed] = f[g]["z_scores"][:].astype(np.float32)
+                self.X_per_gene[g_prime] = np.hstack([X, X_pad])
+
+                # Pad meta-features with zeros
+                F = f[g]["meta_features"][:].astype(np.float32)
+                F_pad = np.zeros(
+                    (self.max_n_variants - F.shape[0], F.shape[1]), dtype=np.float32
+                )
+                self.F_per_gene[g_prime] = np.vstack([F, F_pad])
+
+                self.Y_per_gene[g_prime] = f[g]["z_scores"][:].astype(np.float32)
 
         for g in self.genes:
             assert (
-                self.samples[g].shape[0]
-                == self.features[g].shape[0]
-                == self.Y[g].shape[0]
+                self.samples_per_gene[g].shape[0]
+                == self.X_per_gene[g].shape[0]
+                == self.Y_per_gene[g].shape[0]
             )
-            assert self.features[g].shape[1] == self.meta_features[g].shape[0]
-            assert not np.isnan(self.features[g]).any()
-            assert not np.isnan(self.meta_features[g]).any(), g
-            assert not np.isnan(self.Y[g]).any()
+            assert self.X_per_gene[g].shape[1] == self.F_per_gene[g].shape[0]
+            assert not np.isnan(self.X_per_gene[g]).any()
+            assert not np.isnan(self.F_per_gene[g]).any()
+            assert not np.isnan(self.Y_per_gene[g]).any()
 
-    def get_n_variants_per_gene(self):
-        return {g: self.features[g].shape[1] for g in self.genes}
+    def get_n_variants_after_padding(self):
+        return self.max_n_variants
+
+    def get_n_variants_before_padding(self):
+        variants_per_gene = {}
+        with h5py.File(self.h5_path, "r") as f:
+            for g in f["genes"].astype(str):
+                variants_per_gene[g] = f[g]["variants"].shape[1]
+        return variants_per_gene
 
     def get_n_meta_features(self):
-        n_meta_features = [self.meta_features[g].shape[1] for g in self.genes]
+        n_meta_features = [self.F_per_gene[g].shape[1] for g in self.genes]
         assert all(n == n_meta_features[0] for n in n_meta_features)
         return n_meta_features[0]
 
@@ -61,9 +80,9 @@ class Dataset(torch.utils.data.Dataset):
         gene = self.genes[idx]
         return {
             "gene": gene,
-            "feature": self.features[gene],
-            "meta_feature": self.meta_features[gene],
-            "Y": self.Y[gene],
+            "X": self.X_per_gene[gene],
+            "F": self.F_per_gene[gene],
+            "Y": self.Y_per_gene[gene],
         }
 
 
@@ -71,7 +90,7 @@ class Model(L.LightningModule):
     def __init__(
         self,
         genes: list[str],
-        n_variants_per_gene: dict[str, int],
+        n_varants: int,
         n_meta_features: int,
         C: float,
         lr: float,
@@ -82,10 +101,10 @@ class Model(L.LightningModule):
         self.gene_to_idx = {g: i for i, g in enumerate(genes)}
         self.C = C
 
-        # For each gene, we have a linear model with n_variants_per_gene[gene] features
-        self.betas = nn.ModuleDict(
-            {gene: nn.Linear(n_variants_per_gene[gene], 1) for gene in genes}
-        )
+        # Initialize a learnable parameter W of size (n_genes, n_variants)
+        self.W = nn.Parameter(torch.empty(len(genes), n_varants))
+        nn.init.xavier_uniform_(self.W)
+        self.b = nn.Parameter(torch.zeros(len(genes)))
 
         # We have a single linear model that maps meta-features to priors on variant effects
         self.prior = nn.Linear(n_meta_features, 1)
@@ -96,24 +115,38 @@ class Model(L.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
 
-    def compute_prior(self, meta_features):
+    def compute_prior(self, F):
         """
         Parameters:
-            meta_features: (n_variants, n_meta_features)
+            F: (n_genes, n_variants, n_meta_features)
         Returns:
-            prior: (n_variants)
+            prior: (n_genes, n_variants)
         """
-        return self.softplus(self.prior(meta_features)).squeeze()
+        return self.softplus(self.prior(F))
 
-    def forward(self, gene, features):
+    def forward(self, genes, X):
         """
         Parameters:
-            gene: str
-            features: (n_samples, n_variants)
+            genes: (n_genes)
+            X: (n_genes, n_samples, n_variants)
         Returns:
-            preds: (n_samples)
+            preds: (n_genes, n_samples)
         """
-        return self.betas[gene](features).squeeze()
+        gene_idxs = [self.gene_to_idx[g] for g in genes]
+        my_W = self.W[gene_idxs]  # (n_genes, n_variants)
+        my_b = self.b[gene_idxs]  # (n_genes)
+
+        preds = torch.einsum("ijk,ik->ij", X, my_W)  # (n_genes, n_samples)
+        preds += my_b.unsqueeze(1)  # (n_genes, n_samples)
+        return preds
+
+    def training_step(self, batch, batch_idx):
+        genes = batch["gene"]  # (n_genes)
+        X = batch["X"]  # (n_genes, n_samples, n_variants)
+        F = batch["F"]  # (n_genes, n_variants, n_meta_features)
+        Y = batch["Y"]  # (n_genes, n_samples)
+
+        priors = self.compute_prior(F)  # (n_genes, n_variants)
 
     def training_step(self, batch, batch_idx):
         gene = batch["gene"][0]
@@ -203,7 +236,7 @@ def main():
     trainer = L.Trainer(
         accelerator="gpu",
         devices="auto",
-        log_every_n_steps=100,
+        log_every_n_steps=10,
         max_epochs=1_000,
         logger=logger,
         callbacks=[checkpoint_cb, early_stopping_cb],
