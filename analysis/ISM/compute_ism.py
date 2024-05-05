@@ -1,14 +1,15 @@
 import os
 import sys
 from argparse import ArgumentParser
+from collections import defaultdict
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import numpy as np
 import pandas as pd
 import torch
-from Bio import SeqIO
+from Bio import Seq
 from enformer_pytorch import Enformer, str_to_one_hot
 from pyfaidx import Fasta
 from tqdm import tqdm
@@ -22,12 +23,15 @@ from genomic_utils.variant import Variant
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, ref_seq: str, bp_start: int, bp_end: int, variants: list):
+    def __init__(
+        self, ref_seq: str, bp_start: int, bp_end: int, variants: list, rc: bool
+    ):
         super().__init__()
         self.ref_seq = ref_seq
         self.bp_start = bp_start
         self.bp_end = bp_end
         self.variants = variants
+        self.rc = rc
 
     def __len__(self):
         return len(self.variants)
@@ -42,6 +46,10 @@ class Dataset(torch.utils.data.Dataset):
             + v.alt
             + ref_seq[v.pos - self.bp_start + 1 :]
         )
+
+        if self.rc:
+            alt_seq = str(Seq.Seq(alt_seq).reverse_complement())
+
         one_hot_alt_seq = str_to_one_hot(alt_seq)
         return {"seq": one_hot_alt_seq, "variant": str(v)}
 
@@ -57,9 +65,9 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=32)
     # fmt: off
     parser.add_argument("--consensus_seq_dir", type=str, default="/data/yosef3/scratch/ruchir/data/basenji2_consensus_seqs")
-    parser.add_argument("--counts_path", type=str, default="../../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
+    parser.add_argument("--counts_path", type=str, default="/data/yosef3/users/ruchir/finetuning-enformer/process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
     parser.add_argument("--fasta_path", type=str, default="/data/yosef3/scratch/ruchir/data/genomes/hg19/hg19.fa")
-    parser.add_argument("--gene_class_path", type=str, default="../../finetuning/data/h5_bins_384_chrom_split/gene_class.csv")
+    parser.add_argument("--gene_class_path", type=str, default="/data/yosef3/users/ruchir/finetuning-enformer/finetuning/data/h5_bins_384_chrom_split/gene_class.csv")
     # fmt: on
     args = parser.parse_args()
 
@@ -90,7 +98,9 @@ def load_model(model_type: str, model_path: str, seqlen: int):
             "EleutherAI/enformer-official-rough", target_length=seqlen // 128
         )
     elif model_type == "classification":
-        raise NotImplementedError
+        return models.PairwiseClassificationFloatPrecision.load_from_checkpoint(
+            model_path
+        )
     elif model_type == "regression":
         return models.PairwiseRegressionFloatPrecision.load_from_checkpoint(model_path)
     else:
@@ -99,13 +109,24 @@ def load_model(model_type: str, model_path: str, seqlen: int):
 
 @torch.no_grad()
 def make_predictions(
-    model, X, model_type: str, track_idx: int = 5110, avg_center_n_bins: int = 10
+    model,
+    X,
+    model_type: str,
+    seqlen: int,
+    track_idx: int = 5110,
+    avg_center_n_bins: int = 10,
 ) -> np.ndarray:
     """
     X (tensor): (samples, length, 4)
     """
-    if model_type == "baseline":
-        outs = model(X)["human"][:, :, track_idx]  # (samples, bins)
+    if model_type == "baseline" or model_type == "classification":
+        if model_type == "baseline":
+            outs = model(X)["human"][:, :, track_idx]  # (samples, bins)
+        if model_type == "classification":
+            outs = model.base(X, head="human", target_length=seqlen // 128)[
+                :, :, track_idx
+            ]
+
         assert outs.ndim == 2
         assert outs.shape[1] >= avg_center_n_bins
 
@@ -113,9 +134,6 @@ def make_predictions(
         bin_end = bin_start + avg_center_n_bins
         outs = outs[:, bin_start:bin_end].mean(dim=1)
         return outs.cpu().numpy()
-
-    elif model_type == "classification":
-        raise NotImplementedError
 
     elif model_type == "regression":
         outs = model.base(
@@ -130,6 +148,17 @@ def make_predictions(
         outs = model.prediction_head(outs)  # (samples, 1)
         outs = outs.squeeze(1)  # (samples,)
         return outs.cpu().numpy()
+
+
+def make_predictions_on_ref_seq(
+    model, device, ref_seq: str, model_type: str, seqlen: int
+) -> float:
+    ref_seq_rc = str(Seq.Seq(ref_seq).reverse_complement())
+    one_hot_ref_seq = str_to_one_hot(ref_seq)
+    one_hot_ref_seq_rc = str_to_one_hot(ref_seq_rc)
+    X = torch.stack([one_hot_ref_seq, one_hot_ref_seq_rc]).to(device)  # (2, length, 4)
+    preds = make_predictions(model, X, model_type, seqlen)  # (2,)
+    return preds.mean()
 
 
 def main():
@@ -165,19 +194,27 @@ def main():
         assert len(ref_seq) == args.seqlen
 
         # Make prediction on ref_seq
-        one_hot_ref_seq = str_to_one_hot(ref_seq).unsqueeze(0).to(device)
-        ref_pred = make_predictions(model, one_hot_ref_seq, args.model_type)[0]
+        ref_pred = make_predictions_on_ref_seq(
+            model, device, ref_seq, args.model_type, args.seqlen
+        )
 
         # Make predictions on variants
-        ds = Dataset(ref_seq, bp_start, bp_end, genotype_mtx.index)
-        dl = torch.utils.data.DataLoader(ds, batch_size=args.batch_size, num_workers=4)
-        variant_preds = {}
-        for batch in tqdm(dl):
+        forward_ds = Dataset(ref_seq, bp_start, bp_end, genotype_mtx.index, rc=False)
+        reverse_ds = Dataset(ref_seq, bp_start, bp_end, genotype_mtx.index, rc=True)
+        combined_ds = torch.utils.data.ConcatDataset([forward_ds, reverse_ds])
+        combined_dl = torch.utils.data.DataLoader(
+            combined_ds, batch_size=args.batch_size, num_workers=4
+        )
+        variant_preds = defaultdict(list)
+        for batch in tqdm(combined_dl):
             seqs = batch["seq"].to(device)
-            outs = make_predictions(model, seqs, args.model_type)
+            outs = make_predictions(model, seqs, args.model_type, args.seqlen)
             for v_str, out in zip(batch["variant"], outs):
                 v = Variant.create_from_str(v_str)
-                variant_preds[v] = out
+                variant_preds[v].append(out)
+
+        assert all(len(v) == 2 for v in variant_preds.values())
+        variant_preds = {v: np.mean(outs) for v, outs in variant_preds.items()}
         variant_preds_l = [variant_preds.get(v, np.nan) for v in genotype_mtx.index]
 
         # Save predictions
