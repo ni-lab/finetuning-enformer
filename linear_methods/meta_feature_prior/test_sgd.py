@@ -40,11 +40,11 @@ def main():
         counts = defaultdict(dict)  # gene -> sample -> count
         for batch in tqdm(test_dl):
             gene = batch["gene"][0]
-            features = batch["feature"][0].to(device)  # (n_samples, n_variants)
-            Y = batch["Y"][0].to(device)  # (n_samples)
             samples = test_ds.samples[gene]  # (n_samples)
-            Y_hat = model(gene, features).detach().cpu().numpy()  # (n_samples)
-            assert Y.shape[0] == samples.size == Y_hat.size
+            X = batch["X"][0].to(device)  # (n_samples, n_variants)
+            Y = batch["Y"][0].to(device)  # (n_samples)
+            Y_hat = model(gene, X).detach().cpu().numpy()  # (n_samples)
+            assert samples.size == Y.shape[0] == Y_hat.size
 
             for i, sample in enumerate(samples):
                 preds[gene][sample] = Y_hat[i]

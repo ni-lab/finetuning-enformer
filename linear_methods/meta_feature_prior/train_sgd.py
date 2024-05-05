@@ -13,44 +13,46 @@ import torch.nn as nn
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from tqdm import tqdm
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, h5_path: str):
+    def __init__(self, h5_path: str, load_meta_features: bool = True):
         self.genes = []
-        self.samples = {}  # gene -> (n_samples,)
-        self.features = {}  # gene -> (n_samples, n_variants)
-        self.meta_features = {}  # gene -> (n_variants, n_meta_features)
-        self.Y = {}  # gene -> (n_samples,)
+        self.n_variants_per_gene = {}  # gene -> int
+        self.samples_per_gene = {}  # gene -> (n_samples,)
+        self.X_per_gene = {}  # gene -> (n_samples, n_variants)
+        self.F_per_gene = {}  # gene -> (n_variants, n_meta_features)
+        self.Y_per_gene = {}  # gene -> (n_samples,)
+
         with h5py.File(h5_path, "r") as f:
-            for g in sorted(f["genes"][:].astype(str)):
-                if f[g]["variants"].shape[0] == 0:
-                    continue
-                g_renamed = g.replace(".", "_")  # module name cannot contain "."
-                self.genes.append(g_renamed)
-                self.samples[g_renamed] = f[g]["samples"][:].astype(str)
-                self.features[g_renamed] = f[g]["dosages"][:].astype(np.float32)
-                self.meta_features[g_renamed] = f[g]["meta_features"][:].astype(
-                    np.float32
-                )
-                self.Y[g_renamed] = f[g]["z_scores"][:].astype(np.float32)
+            for g in tqdm(f["genes"][:].astype(str), desc="Loading gene data"):
+                g_prime = g.replace(".", "_")
+                self.genes.append(g_prime)
+                self.n_variants_per_gene[g_prime] = f[g]["variants"].shape[0]
+                self.samples_per_gene[g_prime] = f[g]["samples"][:].astype(str)
+                self.X_per_gene[g_prime] = f[g]["dosages"][:].astype(np.float32)
+                self.Y_per_gene[g_prime] = f[g]["z_scores"][:].astype(np.float32)
+                if load_meta_features:
+                    self.F_per_gene[g_prime] = f[g]["meta_features"][:].astype(
+                        np.float32
+                    )
 
         for g in self.genes:
-            assert (
-                self.samples[g].shape[0]
-                == self.features[g].shape[0]
-                == self.Y[g].shape[0]
-            )
-            assert self.features[g].shape[1] == self.meta_features[g].shape[0]
-            assert not np.isnan(self.features[g]).any()
-            assert not np.isnan(self.meta_features[g]).any(), g
-            assert not np.isnan(self.Y[g]).any()
+            assert not np.isnan(self.X_per_gene[g]).any()
+            assert not np.isnan(self.Y_per_gene[g]).any()
+            if load_meta_features:
+                assert not np.isnan(self.F_per_gene[g]).any()
 
     def get_n_variants_per_gene(self):
-        return {g: self.features[g].shape[1] for g in self.genes}
+        return self.n_variants_per_gene
 
     def get_n_meta_features(self):
-        n_meta_features = [self.meta_features[g].shape[1] for g in self.genes]
+        if len(self.F_per_gene) == 0:
+            raise ValueError("No meta-features loaded")
+
+        n_meta_features = [self.F_per_gene[g].shape[1] for g in self.genes]
         assert all(n == n_meta_features[0] for n in n_meta_features)
         return n_meta_features[0]
 
@@ -58,13 +60,11 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.genes)
 
     def __getitem__(self, idx):
-        gene = self.genes[idx]
-        return {
-            "gene": gene,
-            "feature": self.features[gene],
-            "meta_feature": self.meta_features[gene],
-            "Y": self.Y[gene],
-        }
+        g = self.genes[idx]
+        result = dict(gene=g, X=self.X_per_gene[g], Y=self.Y_per_gene[g])
+        if len(self.F_per_gene) > 0:
+            result["F"] = self.F_per_gene[g]
+        return result
 
 
 class Model(L.LightningModule):
@@ -94,68 +94,76 @@ class Model(L.LightningModule):
         self.mse_loss = nn.MSELoss()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+        lr_scheduler_config = {
+            "scheduler": ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.1, patience=1, threshold=5e-4
+            ),
+            "monitor": "val/pred_loss",
+            "interval": "epoch",
+            "frequency": 1,
+            "strict": True,
+        }
+        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler_config}
 
-    def compute_prior(self, meta_features):
+    def compute_prior(self, F):
         """
         Parameters:
-            meta_features: (n_variants, n_meta_features)
+            F: (n_variants, n_meta_features)
         Returns:
             prior: (n_variants)
         """
-        return self.softplus(self.prior(meta_features)).squeeze()
+        return self.softplus(self.prior(F)).squeeze()
 
-    def forward(self, gene, features):
+    def forward(self, gene, X):
         """
         Parameters:
             gene: str
-            features: (n_samples, n_variants)
+            X: (n_samples, n_variants)
         Returns:
             preds: (n_samples)
         """
-        return self.betas[gene](features).squeeze()
+        return self.betas[gene](X).squeeze()
 
     def training_step(self, batch, batch_idx):
         gene = batch["gene"][0]
-        features = batch["feature"][0]  # (n_samples, n_variants)
-        meta_features = batch["meta_feature"][0]  # (n_variants, n_meta_features)
+        X = batch["X"][0]  # (n_samples, n_variants)
+        F = batch["F"][0]  # (n_variants, n_meta_features)
         Y = batch["Y"][0]  # (n_samples)
-        assert features.shape[0] == Y.shape[0]
-        assert features.shape[1] == meta_features.shape[0]
+        assert X.shape[0] == Y.shape[0]
+        assert X.shape[1] == F.shape[0]
 
-        priors = self.compute_prior(meta_features)  # (n_variants)
+        priors = self.compute_prior(F)  # (n_variants)
         assert not priors.isnan().any()
+        Y_hat = self(gene, X)  # (n_samples)
 
-        preds = self(gene, features)  # (n_samples)
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
 
         # Compute prediction loss
-        pred_loss = self.mse_loss(preds, Y)
+        pred_loss = self.mse_loss(Y_hat, Y)
         self.log("train/pred_loss", pred_loss)
 
-        # Compute regularization loss: sum(betas^2 / priors)
-        regularization_loss = torch.div(
-            torch.square(self.betas[gene].weight.squeeze()), priors + 1e-3
-        ).sum()
-        self.log("train/regularization_loss", regularization_loss)
+        # Compute regularization loss
+        gene_beta = self.betas[gene].weight.squeeze()  # (n_variants)
+        reg_loss = ((gene_beta) ** 2 / (priors + 1e-3)).sum()
+        self.log("train/regularization_loss", reg_loss)
 
         # Compute prior loss
         prior_loss = self.C * priors.sum()
         self.log("train/prior_loss", prior_loss)
 
-        loss = pred_loss + regularization_loss + prior_loss
-        self.log("train/total_loss", loss)
-        return loss
+        total_loss = pred_loss + reg_loss + prior_loss
+        self.log("train/total_loss", total_loss)
+        return total_loss
 
     def validation_step(self, batch, batch_idx):
         gene = batch["gene"][0]
-        features = batch["feature"][0]  # (n_samples, n_variants)
-        meta_features = batch["meta_feature"][0]  # (n_variants, n_meta_features)
+        X = batch["X"][0]  # (n_samples, n_variants)
         Y = batch["Y"][0]  # (n_samples)
-        assert features.shape[0] == Y.shape[0]
-        assert features.shape[1] == meta_features.shape[0]
+        assert X.shape[0] == Y.shape[0]
 
-        preds = self(gene, features)  # (n_samples)
-        pred_loss = self.mse_loss(preds, Y)
+        Y_hat = self(gene, X)  # (n_samples)
+        pred_loss = self.mse_loss(Y_hat, Y)
         self.log("val/pred_loss", pred_loss)
 
 
@@ -173,9 +181,13 @@ def main():
     args = parse_args()
 
     train_ds = Dataset(os.path.join(args.dataset_dir, "train.h5"))
-    val_ds = Dataset(os.path.join(args.dataset_dir, "val.h5"))
-    train_dl = torch.utils.data.DataLoader(train_ds, batch_size=1, shuffle=True)
-    val_dl = torch.utils.data.DataLoader(val_ds, batch_size=1)
+    val_ds = Dataset(os.path.join(args.dataset_dir, "val.h5"), load_meta_features=False)
+    train_dl = torch.utils.data.DataLoader(
+        train_ds, batch_size=1, num_workers=2, shuffle=True
+    )
+    val_dl = torch.utils.data.DataLoader(
+        val_ds, batch_size=1, num_workers=2, shuffle=False
+    )
 
     run_dir = os.path.join(args.save_dir, args.run_name + f"_C_{args.C}_lr_{args.lr}")
     logs_dir = os.path.join(run_dir, "logs")
