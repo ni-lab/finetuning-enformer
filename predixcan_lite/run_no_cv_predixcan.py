@@ -127,6 +127,10 @@ def main():
             gene, counts_df, sample_splits_df, args.context_size
         )
 
+        if train_data["X"].shape[1] == 0:
+            preds_df.loc[gene, test_data["samples"]] = np.mean(train_data["Y"])
+            continue
+
         scaler = StandardScaler()
         train_data["X"] = scaler.fit_transform(train_data["X"])
         val_data["X"] = scaler.transform(val_data["X"])
