@@ -167,3 +167,4 @@ cython_debug/
 wandb/
 process_geuvadis_data/rpkm/peer/
 linear_methods/data/genotypes/1Mb
+linear_methods/predixcan/*/coefs.csv
