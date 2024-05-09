@@ -15,12 +15,13 @@ from tqdm import tqdm
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, h5_path, seqlen: int):
+    def __init__(self, h5_path, seqlen: int, rc: bool = False):
         super().__init__()
         assert seqlen % 128 == 0
 
         self.h5_file = h5py.File(h5_path, "r")
         self.seqlen = seqlen
+        self.rc = rc
 
         self.genes = self.h5_file["genes"][:].astype(str)
         self.samples = self.h5_file["samples"][:].astype(str)
@@ -42,6 +43,8 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         seq = self.__shorten_seq(self.seqs[idx]).astype(np.float32)
+        if self.rc:
+            seq = np.flip(seq, axis=(-1, -2)).copy()
         gene = self.genes[idx]
         sample = self.samples[idx]
         return {"seq": seq, "gene": gene, "sample": sample}
@@ -54,7 +57,7 @@ def parse_args():
     parser.add_argument("--h5_dir", type=str, default="../finetuning/data/h5_bins_384_chrom_split")
     # fmt: on
     parser.add_argument("--seqlen", type=int, default=384 * 128)
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=32)
 
     args = parser.parse_args()
     assert args.seqlen % 128 == 0
@@ -88,42 +91,42 @@ def make_predictions(
     return outs
 
 
-def get_all_preds(model, device, dl, preds):
+def get_all_preds(model, device, ds, preds, batch_size):
+    dl = torch.utils.data.DataLoader(
+        ds, batch_size=batch_size, shuffle=False, num_workers=8
+    )
     for batch in tqdm(dl):
         seqs = batch["seq"].to(device)
         genes = batch["gene"]
         samples = batch["sample"]
         outs = make_predictions(model, seqs)
         for gene, sample, out in zip(genes, samples, outs):
-            preds[gene][sample] = out
+            preds[gene][sample].append(out)
 
 
 def main():
     args = parse_args()
 
-    train_ds = Dataset(os.path.join(args.h5_dir, "train.h5"), seqlen=args.seqlen)
-    val_ds = Dataset(os.path.join(args.h5_dir, "val.h5"), seqlen=args.seqlen)
-    test_ds = Dataset(os.path.join(args.h5_dir, "test.h5"), seqlen=args.seqlen)
-
-    train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=False, num_workers=4
-    )
-    val_dl = torch.utils.data.DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False, num_workers=4
-    )
-    test_dl = torch.utils.data.DataLoader(
-        test_ds, batch_size=args.batch_size, shuffle=False, num_workers=4
-    )
-
     device = torch.device("cuda")
     model = Enformer.from_pretrained(
         "EleutherAI/enformer-official-rough", target_length=args.seqlen // 128
     ).to(device)
+    model.eval()
 
-    preds = defaultdict(dict)  # gene -> sample -> pred
-    get_all_preds(model, device, train_dl, preds)
-    get_all_preds(model, device, val_dl, preds)
-    get_all_preds(model, device, test_dl, preds)
+    preds = defaultdict(
+        lambda: defaultdict(list)
+    )  # gene -> sample -> list of preds (one for forward, one for reverse)
+    for split in ["train", "val", "test"]:
+        for rc in [False, True]:
+            ds = Dataset(
+                os.path.join(args.h5_dir, f"{split}.h5"), seqlen=args.seqlen, rc=rc
+            )
+            get_all_preds(model, device, ds, preds, args.batch_size)
+
+    for g in preds:
+        for s in preds[g]:
+            assert len(preds[g][s]) == 2
+            preds[g][s] = np.mean(preds[g][s])
 
     # Save predictions as a dataframe
     genes = sorted(preds.keys())
