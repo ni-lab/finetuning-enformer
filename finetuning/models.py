@@ -923,6 +923,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         self.attention_pool = AttentionPool(enformer_hidden_dim)
         self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
         self.mse_loss = nn.MSELoss()
+        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
 
         self.center_start = (n_total_bins - avg_center_n_bins) // 2
         self.center_end = self.center_start + avg_center_n_bins
