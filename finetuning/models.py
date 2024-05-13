@@ -959,7 +959,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             assert X.shape[1] == self.hparams.n_total_bins
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
-            Y = self.prediction_head
+            Y = self.prediction_head(X)
             Y = rearrange(Y, "(S H) 1 -> S H", H=2)
             Y = Y.mean(dim=1)
             return Y
