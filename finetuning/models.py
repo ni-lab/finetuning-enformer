@@ -898,6 +898,272 @@ class PairwiseRegressionFloatPrecision(BaseModule):
                 return {"Y_hat": Y_hat, "true_idx": true_idx}
 
 
+class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
+        n_total_bins: int,
+        avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
+
+        enformer_hidden_dim = 2 * self.base.dim
+        self.attention_pool = AttentionPool(enformer_hidden_dim)
+        self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
+        self.mse_loss = nn.MSELoss()
+
+        self.center_start = (n_total_bins - avg_center_n_bins) // 2
+        self.center_end = self.center_start + avg_center_n_bins
+
+        self.all_metrics = torchmetrics.MetricCollection(
+            {
+                "human_r2_score": R2Score(num_outputs=5313),
+                "mouse_r2_score": R2Score(num_outputs=1643),
+            }
+        )
+
+        self.train_metrics = self.all_metrics.clone(prefix="train/")
+        self.val_metrics = self.all_metrics.clone(prefix="val/")
+
+    def forward(
+        self,
+        X,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if not return_base_predictions:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            X = self.base(
+                X,
+                return_only_embeddings=True,
+                target_length=self.hparams.n_total_bins,
+            )
+            assert X.shape[1] == self.hparams.n_total_bins
+            X = X[:, self.center_start : self.center_end, :]
+            X = self.attention_pool(X)
+            Y = self.prediction_head
+            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+            Y = Y.mean(dim=1)
+            return Y
+        else:
+            Y = self.base(X, head=base_predictions_head, target_length=896)
+
+        return Y
+
+    def training_step(self, batch, batch_idx):
+        total_loss = 0.0
+
+        for i, dl_batch in enumerate(batch):
+            loss = 0.0
+
+            if i == 0:  # this is the pairwise data
+                X1, X2, Y = (
+                    dl_batch["seq1"],
+                    dl_batch["seq2"],
+                    dl_batch["z_diff"].float(),
+                )
+                X = torch.cat([X1, X2], dim=0)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
+                Y_hat = self(X)
+                Y1_hat = Y_hat[: X1.shape[0]]
+                Y2_hat = Y_hat[X1.shape[0] :]
+                Y_diff = Y1_hat - Y2_hat
+                loss = self.mse_loss(Y_diff, Y)
+                self.log("train/pairwise_regression_loss", loss)
+                total_loss += loss
+
+            elif i == 1:  # this is the original human training data
+                X, Y = dl_batch["seq"], dl_batch["y"]
+                Y_hat = self(
+                    X, return_base_predictions=True, base_predictions_head="human"
+                )
+                poisson_loss = self.poisson_loss(Y_hat, Y)
+                self.log("train/human_poisson_loss", poisson_loss)
+                loss += poisson_loss
+
+                self.train_metrics["human_r2_score"](
+                    Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1])
+                )
+                self.log(
+                    "train/human_r2_score",
+                    self.train_metrics["human_r2_score"],
+                    on_step=False,
+                    on_epoch=True,
+                )
+
+            elif i == 2:  # this is the original mouse training data
+                X, Y = dl_batch["seq"], dl_batch["y"]
+                Y_hat = self(
+                    X, return_base_predictions=True, base_predictions_head="mouse"
+                )
+                poisson_loss = self.poisson_loss(Y_hat, Y)
+                self.log("train/mouse_poisson_loss", poisson_loss)
+                loss += poisson_loss
+
+                self.train_metrics["mouse_r2_score"](
+                    Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1])
+                )
+                self.log(
+                    "train/mouse_r2_score",
+                    self.train_metrics["mouse_r2_score"],
+                    on_step=False,
+                    on_epoch=True,
+                )
+
+            else:
+                raise ValueError(f"Invalid number of dataloaders: {i+1}")
+
+            total_loss += loss
+
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        if self.hparams.weight_decay is not None:
+            self.log(
+                "train/weight_decay",
+                self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+            )
+        self.log("train/total_loss", total_loss)
+        return total_loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:  # this is the pairwise data
+            X1, X2, Y = (
+                batch["seq1"],
+                batch["seq2"],
+                batch["z_diff"].float(),
+            )
+            X = torch.cat([X1, X2], dim=0)
+            if X.shape[-1] != 4:
+                X = rearrange(X, "S H L -> (S H) L")
+                X = seq_indices_to_one_hot(X)
+            else:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            Y_hat = self(X)
+            Y1_hat = Y_hat[: X1.shape[0]]
+            Y2_hat = Y_hat[X1.shape[0] :]
+            Y_diff = Y1_hat - Y2_hat
+            loss = self.mse_loss(Y_diff, Y)
+            self.log(
+                "val/pairwise_regression_loss", loss, sync_dist=True, on_epoch=True
+            )
+
+        elif dataloader_idx == 1:  # this is the original human training data
+            X, Y = batch["seq"], batch["y"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
+            poisson_loss = self.poisson_loss(Y_hat, Y)
+            self.log(
+                "val/human_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
+            )
+
+            self.val_metrics["human_r2_score"](
+                Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1])
+            )
+            self.log(
+                "val/human_r2_score",
+                self.val_metrics["human_r2_score"],
+                sync_dist=True,
+                on_epoch=True,
+            )
+
+        elif dataloader_idx == 2:  # this is the original mouse training data
+            X, Y = batch["seq"], batch["y"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
+            poisson_loss = self.poisson_loss(Y_hat, Y)
+            self.log(
+                "val/mouse_poisson_loss", poisson_loss, sync_dist=True, on_epoch=True
+            )
+
+            self.val_metrics["mouse_r2_score"](
+                Y_hat.reshape(-1, Y_hat.shape[-1]), Y.reshape(-1, Y.shape[-1])
+            )
+            self.log(
+                "val/mouse_r2_score",
+                self.val_metrics["mouse_r2_score"],
+                sync_dist=True,
+                on_epoch=True,
+            )
+
+        else:
+            raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:
+            if "seq1" in batch and "seq2" in batch:  # this is the pairwise data
+                X1, X2 = batch["seq1"], batch["seq2"]
+                X = torch.cat([X1, X2], dim=0)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
+                Y_hat = self(X)
+                Y1_hat = Y_hat[: X1.shape[0]]
+                Y2_hat = Y_hat[X1.shape[0] :]
+                Y_diff = Y1_hat - Y2_hat
+                if "z_diff" in batch:
+                    Y = batch["z_diff"].float()
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "Y_diff": Y_diff,
+                        "Y": Y,
+                    }
+                else:
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "Y_diff": Y_diff,
+                    }
+            elif "seq" in batch:  # this is the individual sample data
+                X = batch["seq"]
+                true_idx = batch["true_idx"]
+                Y_hat = self(X)
+                if "z" in batch:
+                    Y = batch["z"].float()
+                    return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
+                else:
+                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+
+        elif dataloader_idx == 1:  # this is the original human training data
+            X = batch["seq"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="human")
+            if "Y" in batch:
+                Y = batch["Y"]
+                return {"Y_hat": Y_hat, "Y": Y}
+            else:
+                return Y_hat
+
+        elif dataloader_idx == 2:  # this is the original mouse training data
+            X = batch["seq"]
+            Y_hat = self(X, return_base_predictions=True, base_predictions_head="mouse")
+            if "Y" in batch:
+                Y = batch["Y"]
+                return {"Y_hat": Y_hat, "Y": Y}
+            else:
+                return Y_hat
+
+
 class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(BaseModule):
     def __init__(
         self,
