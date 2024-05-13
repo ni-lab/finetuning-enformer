@@ -64,7 +64,7 @@ def main():
         random_shift=not args.do_not_random_shift,
         random_shift_max=args.random_shift_max,
     )
-    pairwise_val_ds = PairwiseRegressionH5DatasetDynamicSampling(
+    pairwise_val_ds = PairwiseRegressionH5Dataset(
         args.val_data_path,
         n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
