@@ -11,6 +11,26 @@ from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from torchdata.datapipes.iter import FileLister, FileOpener
 
 
+def __subsample_gene_to_idxs(
+    gene_to_idxs: dict[str, np.ndarray],
+    subsample_ratio: float,
+    rng: np.random.Generator,
+) -> dict[str, np.ndarray]:
+    """
+    Subsample the gene_to_idxs dictionary so that we only see a fraction of the data.
+    """
+    # First, shuffle the indices for each gene
+    for g in sorted(gene_to_idxs):
+        gene_to_idxs[g] = rng.permutation(gene_to_idxs[g])
+
+    # Now, select the first subsample_ratio * len(gene_to_idxs[g]) indices for each gene\
+    subsampled_gene_to_idxs = {}
+    for g in gene_to_idxs:
+        n_samples = int(len(gene_to_idxs[g]) * subsample_ratio)
+        subsampled_gene_to_idxs[g] = gene_to_idxs[g][:n_samples]
+    return subsampled_gene_to_idxs
+
+
 class RefDataset(torch.utils.data.Dataset):
     def __init__(self, filepath: str):
         data = np.load(filepath)
@@ -315,6 +335,7 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         reverse_complement_prob: float = 0.0,
         random_shift: bool = False,
         random_shift_max: int = 0,
+        subsample_ratio: float = 1.0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -356,6 +377,9 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
+        self.gene_to_idxs = __subsample_gene_to_idxs(
+            self.gene_to_idxs, subsample_ratio, self.rng
+        )
 
     def get_total_n_bins(self):
         return self.seqlen // 128
@@ -777,6 +801,7 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
         reverse_complement_prob: float = 0.0,
         random_shift: bool = False,
         random_shift_max: int = 0,
+        subsample_ratio: float = 1.0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -817,6 +842,9 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
+        self.gene_to_idxs = __subsample_gene_to_idxs(
+            self.gene_to_idxs, subsample_ratio, self.rng
+        )
 
     def get_total_n_bins(self):
         return self.seqlen // 128
