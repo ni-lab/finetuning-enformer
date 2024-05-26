@@ -377,9 +377,10 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
-        self.gene_to_idxs = __subsample_gene_to_idxs(
-            self.gene_to_idxs, subsample_ratio, self.rng
-        )
+        if subsample_ratio < 1.0:
+            self.gene_to_idxs = __subsample_gene_to_idxs(
+                self.gene_to_idxs, subsample_ratio, self.rng
+            )
 
     def get_total_n_bins(self):
         return self.seqlen // 128
@@ -574,6 +575,7 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
         reverse_complement_prob: float = 0.0,
         random_shift: bool = False,
         random_shift_max: int = 0,
+        subsample_ratio: float = 1.0,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -605,6 +607,10 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
 
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
+        if subsample_ratio < 1.0:
+            self.gene_to_idxs = __subsample_gene_to_idxs(
+                self.gene_to_idxs, subsample_ratio, self.rng
+            )
 
     def get_total_n_bins(self):
         return self.seqlen // 128
@@ -842,9 +848,10 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
 
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
-        self.gene_to_idxs = __subsample_gene_to_idxs(
-            self.gene_to_idxs, subsample_ratio, self.rng
-        )
+        if subsample_ratio < 1.0:
+            self.gene_to_idxs = __subsample_gene_to_idxs(
+                self.gene_to_idxs, subsample_ratio, self.rng
+            )
 
     def get_total_n_bins(self):
         return self.seqlen // 128

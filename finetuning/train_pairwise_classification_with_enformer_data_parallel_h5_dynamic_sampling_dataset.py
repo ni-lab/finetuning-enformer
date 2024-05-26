@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     parser.add_argument("--data_seed", type=int, default=42)
+    parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(
         "--resume_from_checkpoint", action=BooleanOptionalAction, default=False
     )
@@ -63,6 +64,7 @@ def main():
         reverse_complement_prob=args.reverse_complement_prob,
         random_shift=not args.do_not_random_shift,
         random_shift_max=args.random_shift_max,
+        subsample_ratio=args.train_set_subsample_ratio,
     )
     pairwise_val_ds = PairwiseClassificationH5Dataset(
         args.val_data_path,
@@ -125,10 +127,13 @@ def main():
         torch.utils.data.DataLoader(mouse_enformer_val_ds, batch_size=args.batch_size),
     ]
 
+    run_suffix = f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}"
+    if args.train_set_subsample_ratio < 1.0:
+        run_suffix += f"_subsample_ratio_{args.train_set_subsample_ratio}"
+
     run_save_dir = os.path.join(
         args.save_dir,
-        args.run_name
-        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        args.run_name + run_suffix,
     )
     os.makedirs(run_save_dir, exist_ok=True)
 
@@ -140,8 +145,7 @@ def main():
 
     logger = WandbLogger(
         project="enformer-finetune",
-        name=args.run_name
-        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        name=args.run_name + run_suffix,
         save_dir=logs_dir,
     )
 
