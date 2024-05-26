@@ -11,7 +11,7 @@ from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from torchdata.datapipes.iter import FileLister, FileOpener
 
 
-def __subsample_gene_to_idxs(
+def subsample_gene_to_idxs(
     gene_to_idxs: dict[str, np.ndarray],
     subsample_ratio: float,
     rng: np.random.Generator,
@@ -378,7 +378,7 @@ class PairwiseClassificationH5DatasetDynamicSampling(torch.utils.data.Dataset):
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
         if subsample_ratio < 1.0:
-            self.gene_to_idxs = __subsample_gene_to_idxs(
+            self.gene_to_idxs = subsample_gene_to_idxs(
                 self.gene_to_idxs, subsample_ratio, self.rng
             )
 
@@ -608,7 +608,7 @@ class PairwiseRegressionOnCountsH5DatasetDynamicSampling(torch.utils.data.Datase
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
         if subsample_ratio < 1.0:
-            self.gene_to_idxs = __subsample_gene_to_idxs(
+            self.gene_to_idxs = subsample_gene_to_idxs(
                 self.gene_to_idxs, subsample_ratio, self.rng
             )
 
@@ -849,7 +849,7 @@ class PairwiseRegressionH5DatasetDynamicSampling(torch.utils.data.Dataset):
         self.unique_genes = sorted(np.unique(self.genes))
         self.gene_to_idxs = {g: np.where(self.genes == g)[0] for g in self.unique_genes}
         if subsample_ratio < 1.0:
-            self.gene_to_idxs = __subsample_gene_to_idxs(
+            self.gene_to_idxs = subsample_gene_to_idxs(
                 self.gene_to_idxs, subsample_ratio, self.rng
             )
 
