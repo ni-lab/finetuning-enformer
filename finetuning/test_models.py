@@ -53,7 +53,7 @@ def parse_args():
             "pairwise_classification_joint_training",
         ],
     )
-    parser.add_argument("--checkpoint_path", type=str, default=None)
+    parser.add_argument("--checkpoints_dir", type=str, default=None)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
@@ -208,7 +208,7 @@ def main():
         # find the best checkpoint and verify that the training is complete
         task = "regression" if "regression" in args.model_type else "classification"
         best_ckpt_path = find_best_checkpoint_and_verify_that_training_is_complete(
-            args.checkpoint_path,
+            args.checkpoints_dir,
             task,
             args.patience,
             args.proceed_even_if_training_incomplete,
