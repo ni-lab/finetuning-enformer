@@ -103,6 +103,12 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
         if not f.endswith(".ckpt"):
             continue
 
+        if f == "best.ckpt":
+            print(
+                "WARNING: Found a file named 'best.ckpt' in the directory. Skipping it. It will be overwritten if create_best_ckpt_copy is set to True."
+            )
+            continue
+
         ckpt_metric = None
         if task == "classification":
             # names are of the form "epoch={epoch}-step={step}-val_loss={classification_loss:.4f}-val_acc={classification_accuracy:.4f}.ckpt"
