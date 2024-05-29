@@ -53,7 +53,7 @@ def parse_args():
             "joint_classification",
         ],
     )
-    parser.add_argument("--checkpoints_dir", type=str, default=None)
+    parser.add_argument("checkpoints_dir", type=str, default=None)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
