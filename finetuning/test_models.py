@@ -168,7 +168,7 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
         os.system(f"cp {best_ckpt_path} {best_ckpt_copy_path}")
         print(f"Created a copy of the best checkpoint at {best_ckpt_copy_path}")
 
-    return best_checkpoint
+    return os.path.join(checkpoint_dir, best_checkpoint)
 
 
 def main():
