@@ -46,7 +46,7 @@ def parse_args():
         type=str,
         choices=[
             "single_regression",
-            "single_regression_on_counts",
+            "single_regression_counts",
             "regression",
             "joint_regression",
             "classification",
@@ -224,7 +224,7 @@ def main():
                 n_total_bins=test_ds.get_total_n_bins(),
             )
             print("Predicting using SingleRegressionFloatPrecision")
-        elif args.model_type == "single_regression_on_counts":
+        elif args.model_type == "single_regression_counts":
             model = SingleRegressionOnCountsFloatPrecision(
                 lr=0,
                 weight_decay=0,
