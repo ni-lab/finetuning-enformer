@@ -47,10 +47,10 @@ def parse_args():
         choices=[
             "single_regression",
             "single_regression_on_counts",
-            "pairwise_regression",
-            "pairwise_regression_joint_training",
-            "pairwise_classification",
-            "pairwise_classification_joint_training",
+            "regression",
+            "joint_regression",
+            "classification",
+            "joint_classification",
         ],
     )
     parser.add_argument("--checkpoints_dir", type=str, default=None)
@@ -105,7 +105,7 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
 
         ckpt_metric = None
         if task == "classification":
-            # names are of the form "epoch={epoch}-step={step}-val_loss={pairwise_classification_loss:.4f}-val_acc={pairwise_classification_accuracy:.4f}.ckpt"
+            # names are of the form "epoch={epoch}-step={step}-val_loss={classification_loss:.4f}-val_acc={classification_accuracy:.4f}.ckpt"
             # split on "-" if there are version numbers in the file name (they are added at the end)
             ckpt_metric = f.split("val_acc=")[1].split(".ckpt")[0].split("-")[0]
             ckpt_metric = float(ckpt_metric)
@@ -233,7 +233,7 @@ def main():
                 n_total_bins=test_ds.get_total_n_bins(),
             )
             print("Predicting using SingleRegressionOnCountsFloatPrecision")
-        elif args.model_type == "pairwise_regression":
+        elif args.model_type == "regression":
             model = PairwiseRegressionFloatPrecision(
                 lr=0,
                 weight_decay=0,
@@ -242,7 +242,7 @@ def main():
                 n_total_bins=test_ds.get_total_n_bins(),
             )
             print("Predicting using PairwiseRegressionFloatPrecision")
-        elif args.model_type == "pairwise_regression_joint_training":
+        elif args.model_type == "joint_regression":
             model = PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(
                 lr=0,
                 weight_decay=0,
@@ -253,7 +253,7 @@ def main():
             print(
                 "Predicting using PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision"
             )
-        elif args.model_type == "pairwise_classification":
+        elif args.model_type == "classification":
             model = PairwiseClassificationFloatPrecision(
                 lr=0,
                 weight_decay=0,
@@ -262,7 +262,7 @@ def main():
                 n_total_bins=test_ds.get_total_n_bins(),
             )
             print("Predicting using PairwiseClassificationFloatPrecision")
-        elif args.model_type == "pairwise_classification_joint_training":
+        elif args.model_type == "joint_classification":
             model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
                 lr=0,
                 weight_decay=0,
