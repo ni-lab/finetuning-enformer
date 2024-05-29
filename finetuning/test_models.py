@@ -58,6 +58,10 @@ def parse_args():
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--use_reverse_complement", action="store_true", default=False)
+    parser.add_argument(
+        "--proceed_even_if_training_incomplete", action="store_true", default=False
+    )
+    parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -74,7 +78,11 @@ def predict(model, dl, device) -> np.ndarray:
 
 
 def find_best_checkpoint_and_verify_that_training_is_complete(
-    checkpoint_dir, task, patience=5
+    checkpoint_dir,
+    task,
+    patience=5,
+    proceed_even_if_training_incomplete=False,
+    create_best_ckpt_copy=False,
 ):
     """
     Find the best checkpoint in the directory and verify that the training is complete.
@@ -83,6 +91,8 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
         checkpoint_dir: Directory containing the checkpoints.
         task: Task for which the checkpoints were saved. Can be one of "classification" or "regression". Used to determine the metric to check. For classification, it is "val_acc", and for regression, it is "val_loss".
         patience: Patience for checking if the training is complete.
+        proceed_even_if_training_incomplete: If True, the function will not raise an error if the training is not complete.
+        create_best_ckpt_copy: If True, the function will create a copy of the best checkpoint in the same directory with the name "best.ckpt".
     """
     # find the best checkpoint
     best_checkpoint = None
@@ -133,12 +143,24 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
     if best_checkpoint is None:
         raise ValueError("No checkpoint found in the directory.")
     if max_epoch - best_metric_epoch < patience:
-        print(
-            "WARNING: Training may not be complete. Current best checkpoint is from epoch",
-            best_metric_epoch,
-            "and the last checkpoint is from epoch",
-            max_epoch,
-        )
+        if not proceed_even_if_training_incomplete:
+            raise ValueError(
+                f"Training may not be complete. Current best checkpoint is from epoch {best_metric_epoch} and the last checkpoint is from epoch {max_epoch}."
+            )
+        else:
+            print(
+                "WARNING: Training may not be complete. Current best checkpoint is from epoch",
+                best_metric_epoch,
+                "and the last checkpoint is from epoch",
+                max_epoch,
+            )
+
+    # create a copy of the best checkpoint
+    if create_best_ckpt_copy:
+        best_ckpt_path = os.path.join(checkpoint_dir, best_checkpoint)
+        best_ckpt_copy_path = os.path.join(checkpoint_dir, "best.ckpt")
+        os.system(f"cp {best_ckpt_path} {best_ckpt_copy_path}")
+        print(f"Created a copy of the best checkpoint at {best_ckpt_copy_path}")
 
     return best_checkpoint
 
@@ -186,7 +208,11 @@ def main():
         # find the best checkpoint and verify that the training is complete
         task = "regression" if "regression" in args.model_type else "classification"
         best_ckpt_path = find_best_checkpoint_and_verify_that_training_is_complete(
-            args.checkpoint_path, task, args.patience
+            args.checkpoint_path,
+            task,
+            args.patience,
+            args.proceed_even_if_training_incomplete,
+            args.create_best_ckpt_copy,
         )
 
         if args.model_type == "single_regression":
