@@ -202,7 +202,9 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             af_threshold: allele frequency threshold below which variants are considered rare
         """
         print(f"Filtering out rare variants with AF < {af_threshold}...")
-        filtered_seqs = np.zeros_like(self.seqs)
+        filtered_seqs = np.zeros(
+            self.seqs.shape, dtype=np.float32
+        )  # (n_seqs, 2, length, 4)
         for gene in tqdm(self.afs):
             gene_afs = self.afs[gene]
             rare_variant_mask = gene_afs < af_threshold
