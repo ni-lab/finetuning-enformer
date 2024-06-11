@@ -202,6 +202,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             af_threshold: allele frequency threshold below which variants are considered rare
         """
         print(f"Filtering out rare variants with AF < {af_threshold}...")
+        filtered_seqs = np.zeros_like(self.seqs)
         for gene in self.afs:
             gene_afs = self.afs[gene]
             rare_variant_mask = gene_afs < af_threshold
@@ -218,8 +219,18 @@ class SampleH5Dataset(torch.utils.data.Dataset):
                 positions_that_were_rare[1],
                 major_allele[positions_that_were_rare[1]],
             ] = 1
-            self.seqs[self.genes == gene] = gene_seqs.reshape(-1, 2, self.seqlen, 4)
-            assert torch.all(self.seqs[self.genes == gene].sum(axis=-1) == 1)
+            filtered_seqs[np.where(self.genes == gene)[0]] = gene_seqs.reshape(
+                -1, 2, self.seqlen, 4
+            )
+            assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
+
+        # for genes that are not seen in the training set, we keep the original sequences
+        for gene in np.unique(self.genes):
+            if gene not in self.afs:
+                filtered_seqs[np.where(self.genes == gene)[0]] = self.seqs[
+                    self.genes == gene
+                ]
+
         print("Done filtering rare variants.")
 
     def get_total_n_bins(self):
