@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import pickle
 
 import h5py
 import numpy as np
@@ -9,6 +10,7 @@ import torch
 import utils
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from torchdata.datapipes.iter import FileLister, FileOpener
+from tqdm import tqdm
 
 
 def subsample_gene_to_idxs(
@@ -61,6 +63,10 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         random_shift_max: int = 0,
         return_reverse_complement: bool = False,
         shift_max: int = 0,
+        remove_rare_variants: bool = False,
+        rare_variant_af_threshold: float = 0.05,
+        train_h5_path_for_af_computation: str = None,
+        force_recompute_afs: bool = False,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -115,6 +121,98 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             == self.Z.size
             == self.percentiles.size
         )
+
+        # compute allele freqs from the training set if we are removing rare variants
+        if remove_rare_variants:
+            assert train_h5_path_for_af_computation is not None
+            self.afs = self.__compute_afs(
+                train_h5_path_for_af_computation, force_recompute_afs
+            )
+            self.__filter_rare_variants(rare_variant_af_threshold)
+
+    def __compute_afs(self, train_h5_path: str, force_recompute_afs: bool):
+        """
+        Compute allele freqs from the training set for each variant.
+        Args:
+            train_h5_path: path to the training h5 file
+            force_recompute_afs: if True, recompute the allele freqs even if they are already exist
+        Returns:
+            allele_freqs: a dictionary where gene names are keys and values are numpy arrays of allele freqs
+        """
+        afs_cache_path = train_h5_path + ".afs.pkl"
+        train_h5_file = h5py.File(train_h5_path, "r")
+        train_genes = train_h5_file["genes"][:].astype(str)
+
+        if os.path.exists(afs_cache_path) and not force_recompute_afs:
+            with open(afs_cache_path, "rb") as f:
+                afs = pickle.load(f)
+
+            # check that the MAFs are computed for all genes
+            assert set(afs.keys()) == set(np.unique(train_genes))
+
+            print(f"Loaded cached allele freqs from {afs_cache_path}")
+
+            return afs
+
+        train_samples = train_h5_file["samples"][:].astype(str)
+        train_seqs = train_h5_file["seqs"]
+        assert train_seqs.shape[2] >= self.seqlen
+        train_Y = train_h5_file["Y"][:]
+        train_Z = train_h5_file["Z"][:]
+        train_percentiles = train_h5_file["P"][:]
+
+        assert (
+            train_genes.size
+            == train_samples.size
+            == train_seqs.shape[0]
+            == train_Y.size
+            == train_Z.size
+            == train_percentiles.size
+        )
+
+        print(f"Computing allele freqs from {train_h5_path}...")
+
+        afs = {}
+        for gene in tqdm(np.unique(train_genes)):
+            gene_idxs = train_genes == gene
+            gene_seqs = train_seqs[gene_idxs]  # (n_seqs, 2, length, 4)
+            gene_allele_seqs = gene_seqs.reshape(
+                -1, self.seqlen, 4
+            )  # (n_seqs * 2, length, 4)
+            gene_allele_counts = gene_allele_seqs.sum(axis=0)  # (length, 4)
+            gene_allele_freqs = (
+                gene_allele_counts / gene_allele_seqs.shape[0]
+            )  # (length, 4)
+            afs[gene] = gene_allele_freqs
+
+        with open(afs_cache_path, "wb+") as f:
+            pickle.dump(afs, f)
+
+        print(f"Computed allele freqs and saved to {afs_cache_path}")
+
+        return afs
+
+    def __filter_rare_variants(self, af_threshold: float):
+        """
+        Filter out rare variants from the dataset by replacing the rare variants with the major allele.
+        Args:
+            af_threshold: allele frequency threshold below which variants are considered rare
+        """
+        print(f"Filtering out rare variants with AF < {af_threshold}...")
+        for gene in self.afs:
+            gene_afs = self.afs[gene]
+            rare_variant_mask = gene_afs < af_threshold
+            gene_seqs = self.seqs[self.genes == gene]  # (n_seqs, 2, length, 4)
+            gene_seqs = gene_seqs.reshape(-1, self.seqlen, 4)  # (n_seqs * 2, length, 4)
+            gene_seqs[:, rare_variant_mask] = 0  # zero out the rare variants
+            # at positions where we zeroed out the rare variants, we need to update them to the major allele
+            major_allele = gene_afs.argmax(axis=-1)
+            positions_that_were_rare = (
+                gene_seqs.sum(axis=-1) == 0
+            )  # (n_seqs * 2, length)
+            gene_seqs[positions_that_were_rare, major_allele] = 1
+            self.seqs[self.genes == gene] = gene_seqs.reshape(-1, 2, self.seqlen, 4)
+        print("Done filtering rare variants.")
 
     def get_total_n_bins(self):
         return self.seqlen // 128
