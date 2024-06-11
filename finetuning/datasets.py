@@ -210,11 +210,16 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             gene_seqs[:, rare_variant_mask] = 0  # zero out the rare variants
             # at positions where we zeroed out the rare variants, we need to update them to the major allele
             major_allele = gene_afs.argmax(axis=-1)
-            positions_that_were_rare = (
+            positions_that_were_rare = torch.where(
                 gene_seqs.sum(axis=-1) == 0
-            )  # (n_seqs * 2, length)
-            gene_seqs[positions_that_were_rare, major_allele] = 1
+            )  # positions where the sum of the one-hot encoding is 0
+            gene_seqs[
+                positions_that_were_rare[0],
+                positions_that_were_rare[1],
+                major_allele[positions_that_were_rare[1]],
+            ] = 1
             self.seqs[self.genes == gene] = gene_seqs.reshape(-1, 2, self.seqlen, 4)
+            assert torch.all(self.seqs[self.genes == gene].sum(axis=-1) == 1)
         print("Done filtering rare variants.")
 
     def get_total_n_bins(self):
