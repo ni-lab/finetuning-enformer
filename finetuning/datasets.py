@@ -67,6 +67,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         rare_variant_af_threshold: float = 0.05,
         train_h5_path_for_af_computation: str = None,
         force_recompute_afs: bool = False,
+        afs_cache_path: str = None,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -125,6 +126,9 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         # compute allele freqs from the training set if we are removing rare variants
         if remove_rare_variants:
             assert train_h5_path_for_af_computation is not None
+            self.afs_cache_path = afs_cache_path
+            if self.afs_cache_path is None:
+                self.afs_cache_path = train_h5_path_for_af_computation + ".afs.pkl"
             self.afs = self.__compute_afs(
                 train_h5_path_for_af_computation, force_recompute_afs
             )
@@ -139,18 +143,17 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         Returns:
             allele_freqs: a dictionary where gene names are keys and values are numpy arrays of allele freqs
         """
-        afs_cache_path = train_h5_path + ".afs.pkl"
         train_h5_file = h5py.File(train_h5_path, "r")
         train_genes = train_h5_file["genes"][:].astype(str)
 
-        if os.path.exists(afs_cache_path) and not force_recompute_afs:
-            with open(afs_cache_path, "rb") as f:
+        if os.path.exists(self.afs_cache_path) and not force_recompute_afs:
+            with open(self.afs_cache_path, "rb") as f:
                 afs = pickle.load(f)
 
             # check that the MAFs are computed for all genes
             assert set(afs.keys()) == set(np.unique(train_genes))
 
-            print(f"Loaded cached allele freqs from {afs_cache_path}")
+            print(f"Loaded cached allele freqs from {self.afs_cache_path}")
 
             return afs
 
@@ -185,10 +188,10 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             )  # (length, 4)
             afs[gene] = gene_allele_freqs
 
-        with open(afs_cache_path, "wb+") as f:
+        with open(self.afs_cache_path, "wb+") as f:
             pickle.dump(afs, f)
 
-        print(f"Computed allele freqs and saved to {afs_cache_path}")
+        print(f"Computed allele freqs and saved to {self.afs_cache_path}")
 
         return afs
 

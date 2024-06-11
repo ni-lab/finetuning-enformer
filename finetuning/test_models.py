@@ -64,6 +64,7 @@ def parse_args():
     parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
     parser.add_argument("--rare_variant_af_threshold", type=float, default=0)
     parser.add_argument("--train_h5_path_for_af_computation", type=str, default=None)
+    parser.add_argument("--afs_cache_path", type=str, default=None)
     parser.add_argument("--force_recompute_afs", action="store_true", default=False)
     return parser.parse_args()
 
@@ -200,6 +201,7 @@ def main():
         rare_variant_af_threshold=args.rare_variant_af_threshold,
         train_h5_path_for_af_computation=args.train_h5_path_for_af_computation,
         force_recompute_afs=args.force_recompute_afs,
+        afs_cache_path=args.afs_cache_path,
     )
 
     test_dl = torch.utils.data.DataLoader(
