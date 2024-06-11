@@ -203,7 +203,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         """
         print(f"Filtering out rare variants with AF < {af_threshold}...")
         filtered_seqs = np.zeros_like(self.seqs)
-        for gene in self.afs:
+        for gene in tqdm(self.afs):
             gene_afs = self.afs[gene]
             rare_variant_mask = gene_afs < af_threshold
             gene_seqs = self.seqs[self.genes == gene]  # (n_seqs, 2, length, 4)
@@ -225,7 +225,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
 
         # for genes that are not seen in the training set, we keep the original sequences
-        for gene in np.unique(self.genes):
+        for gene in tqdm(np.unique(self.genes)):
             if gene not in self.afs:
                 filtered_seqs[np.where(self.genes == gene)[0]] = self.seqs[
                     self.genes == gene
