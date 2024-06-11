@@ -231,6 +231,8 @@ class SampleH5Dataset(torch.utils.data.Dataset):
                     self.genes == gene
                 ]
 
+        self.seqs = filtered_seqs
+
         print("Done filtering rare variants.")
 
     def get_total_n_bins(self):
