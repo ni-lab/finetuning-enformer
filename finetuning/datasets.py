@@ -205,6 +205,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         filtered_seqs = np.zeros(
             self.seqs.shape, dtype=np.float32
         )  # (n_seqs, 2, length, 4)
+        total_num_variants_filtered = 0
         for gene in tqdm(self.afs):
             gene_afs = self.afs[gene]
             rare_variant_mask = gene_afs < af_threshold
@@ -224,6 +225,8 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             filtered_seqs[np.where(self.genes == gene)[0]] = gene_seqs.reshape(
                 -1, 2, self.seqlen, 4
             )
+            num_variants_filtered = ((gene_afs < af_threshold) & (gene_afs > 0)).sum()
+            total_num_variants_filtered += num_variants_filtered
             assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
 
         # for genes that are not seen in the training set, we keep the original sequences
@@ -235,7 +238,10 @@ class SampleH5Dataset(torch.utils.data.Dataset):
 
         self.seqs = filtered_seqs
 
-        print("Done filtering rare variants.")
+        print(
+            "Done filtering rare variants. Total number of variants filtered:",
+            total_num_variants_filtered,
+        )
 
     def get_total_n_bins(self):
         return self.seqlen // 128
