@@ -210,7 +210,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             gene_seqs[:, rare_variant_mask] = 0  # zero out the rare variants
             # at positions where we zeroed out the rare variants, we need to update them to the major allele
             major_allele = gene_afs.argmax(axis=-1)
-            positions_that_were_rare = torch.where(
+            positions_that_were_rare = np.where(
                 gene_seqs.sum(axis=-1) == 0
             )  # positions where the sum of the one-hot encoding is 0
             gene_seqs[
