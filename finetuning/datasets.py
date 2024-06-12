@@ -68,6 +68,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         train_h5_path_for_af_computation: str = None,
         force_recompute_afs: bool = False,
         afs_cache_path: str = None,
+        filtered_seqs_cache_path: str = None,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -127,12 +128,30 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         if remove_rare_variants:
             assert train_h5_path_for_af_computation is not None
             self.afs_cache_path = afs_cache_path
-            if self.afs_cache_path is None:
-                self.afs_cache_path = train_h5_path_for_af_computation + ".afs.pkl"
-            self.afs = self.__compute_afs(
-                train_h5_path_for_af_computation, force_recompute_afs
+            self.filtered_seqs_cache_path = filtered_seqs_cache_path
+            if self.filtered_seqs_cache_path is None:
+                self.filtered_seqs_cache_path = (
+                    h5_path
+                    + f".filtered_seqs.af_threshold_{rare_variant_af_threshold}.h5"
+                )
+            print(
+                f"Filtering out rare variants with AF < {rare_variant_af_threshold}..."
             )
-            self.__filter_rare_variants(rare_variant_af_threshold)
+            if os.path.exists(self.filtered_seqs_cache_path):
+                print(
+                    f"Loading filtered sequences from {self.filtered_seqs_cache_path}"
+                )
+            else:
+                if self.afs_cache_path is None:
+                    self.afs_cache_path = train_h5_path_for_af_computation + ".afs.pkl"
+                self.afs = self.__compute_afs(
+                    train_h5_path_for_af_computation, force_recompute_afs
+                )
+                self.__filter_rare_variants(rare_variant_af_threshold)
+            self.filtered_seqs_cache_file = h5py.File(
+                self.filtered_seqs_cache_path, "r"
+            )
+            self.seqs = self.filtered_seqs_cache_file["seqs"]
 
     def __compute_afs(self, train_h5_path: str, force_recompute_afs: bool):
         """
@@ -201,7 +220,6 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         Args:
             af_threshold: allele frequency threshold below which variants are considered rare
         """
-        print(f"Filtering out rare variants with AF < {af_threshold}...")
         filtered_seqs = np.zeros(
             self.seqs.shape, dtype=np.float32
         )  # (n_seqs, 2, length, 4)
@@ -236,11 +254,15 @@ class SampleH5Dataset(torch.utils.data.Dataset):
                     self.genes == gene
                 ]
 
-        self.seqs = filtered_seqs
+        filtered_seqs_cache_file = h5py.File(self.filtered_seqs_cache_path, "w")
+        filtered_seqs_cache_file.create_dataset("seqs", data=filtered_seqs)
+        filtered_seqs_cache_file.close()
 
         print(
             "Done filtering rare variants. Total number of variants filtered:",
             total_num_variants_filtered,
+            ". Filtered sequences saved to",
+            self.filtered_seqs_cache_path,
         )
 
     def get_total_n_bins(self):
