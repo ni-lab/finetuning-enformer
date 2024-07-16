@@ -217,8 +217,14 @@ def main():
             resume_flag = False
         else:
             previous_ckpts = os.listdir(ckpts_dir)
-            # sort by epoch number
             print("Previous checkpoints found: ", previous_ckpts)
+            if "best.ckpt" in previous_ckpts:
+                print(
+                    "Training has been completed and test script was run to generate best.ckpt, skipping training."
+                )
+                return
+
+            # sort by epoch number
             print(
                 "Epoch numbers: ",
                 [int(x.split("-")[0].split("=")[1]) for x in previous_ckpts],
