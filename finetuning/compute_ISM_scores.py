@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import torch
 from datasets import SampleH5Dataset
+from enformer_pytorch.data import str_to_one_hot
 from lightning import Trainer
 from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
@@ -107,6 +108,8 @@ class ISMDataset(Dataset):
         ref_seq = ref_seq[:position] + "ACGT"[nucleotide] + ref_seq[position + 1 :]
         if rc:
             ref_seq = ref_seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
+
+        ref_seq = str_to_one_hot(ref_seq)
 
         return {
             "seq": ref_seq,
@@ -264,43 +267,43 @@ def main():
             # wait for all processes to finish writing the predictions
             torch.distributed.barrier()
 
-    preds = []
-    true_idxs = []
-    batch_indices = []
-    for i in range(n_gpus):
-        p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
-        p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
-        preds.append(p_yhat)
-        true_idxs.append(np.concatenate([batch["true_idx"] for batch in p]))
+    # preds = []
+    # true_idxs = []
+    # batch_indices = []
+    # for i in range(n_gpus):
+    #     p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
+    #     p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
+    #     preds.append(p_yhat)
+    #     true_idxs.append(np.concatenate([batch["true_idx"] for batch in p]))
 
-        bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
-        bi = np.concatenate([inds for inds in bi])
-        batch_indices.append(bi)
+    #     bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
+    #     bi = np.concatenate([inds for inds in bi])
+    #     batch_indices.append(bi)
 
-    test_preds = np.concatenate(preds, axis=0)
-    true_idxs = np.concatenate(true_idxs, axis=0)
-    batch_indices = np.concatenate(batch_indices, axis=0)
+    # test_preds = np.concatenate(preds, axis=0)
+    # true_idxs = np.concatenate(true_idxs, axis=0)
+    # batch_indices = np.concatenate(batch_indices, axis=0)
 
-    # sort the predictions, true_idxs and batch_indices based on the original order
-    sorted_idxs = np.argsort(batch_indices)
-    test_preds = test_preds[sorted_idxs]
-    true_idxs = true_idxs[sorted_idxs]
+    # # sort the predictions, true_idxs and batch_indices based on the original order
+    # sorted_idxs = np.argsort(batch_indices)
+    # test_preds = test_preds[sorted_idxs]
+    # true_idxs = true_idxs[sorted_idxs]
 
-    # now average the predictions that have the same true index
-    unique_true_idxs = np.unique(true_idxs)
-    unique_true_idxs = np.sort(unique_true_idxs)
-    averaged_preds = []
-    for idx in unique_true_idxs:
-        idx_mask = true_idxs == idx
-        avg_pred = np.mean(test_preds[idx_mask], axis=0)
-        averaged_preds.append(avg_pred)
-    test_preds = np.array(averaged_preds)
+    # # now average the predictions that have the same true index
+    # unique_true_idxs = np.unique(true_idxs)
+    # unique_true_idxs = np.sort(unique_true_idxs)
+    # averaged_preds = []
+    # for idx in unique_true_idxs:
+    #     idx_mask = true_idxs == idx
+    #     avg_pred = np.mean(test_preds[idx_mask], axis=0)
+    #     averaged_preds.append(avg_pred)
+    # test_preds = np.array(averaged_preds)
 
-    assert test_preds.size == test_ds.genes.size
-    test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
-    np.savez(
-        test_output_path, preds=test_preds, genes=test_ds.genes, samples=test_ds.samples
-    )
+    # assert test_preds.size == test_ds.genes.size
+    # test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
+    # np.savez(
+    #     test_output_path, preds=test_preds, genes=test_ds.genes, samples=test_ds.samples
+    # )
 
 
 if __name__ == "__main__":
