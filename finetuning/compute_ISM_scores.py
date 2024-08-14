@@ -125,7 +125,7 @@ def main():
     os.makedirs(args.predictions_dir, exist_ok=True)
 
     # get list of all population-split genes
-    gene_class_df = pd.read_csv(args.gene_class_path, sep="\t")
+    gene_class_df = pd.read_csv(args.gene_class_path)
     population_split_genes = gene_class_df[
         gene_class_df["class"] == "yri_split"
     ].reset_index(drop=True)
