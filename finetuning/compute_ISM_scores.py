@@ -4,9 +4,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
-from pyfaidx import Fasta
 import torch
-from torch.utils.data import Dataset, DataLoader
 from datasets import SampleH5Dataset
 from lightning import Trainer
 from lightning.pytorch.callbacks import BasePredictionWriter
@@ -16,16 +14,19 @@ from models import (
     PairwiseRegressionFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
+from pyfaidx import Fasta
+from test_models import (
+    CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete,
+    predict)
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-
-from test_models import CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete, predict
 
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument("counts_path", type=str) # path to the counts file
-    parser.add_argument("gene_class_path", type=str) # path to the gene class file
-    parser.add_argument("fasta_path", type=str) # path to the reference genome
+    parser.add_argument("counts_path", type=str)  # path to the counts file
+    parser.add_argument("gene_class_path", type=str)  # path to the gene class file
+    parser.add_argument("fasta_path", type=str)  # path to the reference genome
     parser.add_argument("predictions_dir", type=str)
     parser.add_argument(
         "model_type",
@@ -50,12 +51,16 @@ def parse_args():
     parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
     return parser.parse_args()
 
+
 class ISMDataset(Dataset):
     """
     Takes in the gene info and reference genome, and generates every possible single nucleotide variant for each gene
     """
+
     def __init__(self, gene_info, fasta_path, seqlen, use_reverse_complement):
-        self.gene_info = gene_info # must contain columns "our_gene_name", "Chr", "Coord"
+        self.gene_info = (
+            gene_info  # must contain columns "our_gene_name", "Chr", "Coord"
+        )
         self.fasta = Fasta(fasta_path)
         self.seqlen = seqlen
         self.use_reverse_complement = use_reverse_complement
@@ -75,15 +80,26 @@ class ISMDataset(Dataset):
             assert len(ref_seq) == self.seqlen
             ref_seqs.append(ref_seq)
         self.gene_info["ref_seq"] = ref_seqs
-    
+
     def __len__(self):
-        return len(self.ref_seqs) * self.seqlen * 4 * (1 + int(self.use_reverse_complement))
-    
+        return (
+            len(self.ref_seqs)
+            * self.seqlen
+            * 4
+            * (1 + int(self.use_reverse_complement))
+        )
+
     def __getitem__(self, idx):
         gene_idx = idx // (self.seqlen * 4 * (1 + int(self.use_reverse_complement)))
-        position_nucleotide_rc_offset = idx % (self.seqlen * 4 * (1 + int(self.use_reverse_complement)))
-        position = position_nucleotide_rc_offset // (4 * (1 + int(self.use_reverse_complement)))
-        nucleotide_rc_offset = position_nucleotide_rc_offset % (4 * (1 + int(self.use_reverse_complement)))
+        position_nucleotide_rc_offset = idx % (
+            self.seqlen * 4 * (1 + int(self.use_reverse_complement))
+        )
+        position = position_nucleotide_rc_offset // (
+            4 * (1 + int(self.use_reverse_complement))
+        )
+        nucleotide_rc_offset = position_nucleotide_rc_offset % (
+            4 * (1 + int(self.use_reverse_complement))
+        )
         nucleotide = nucleotide_rc_offset // (1 + int(self.use_reverse_complement))
         rc = nucleotide_rc_offset % (1 + int(self.use_reverse_complement))
 
@@ -91,7 +107,7 @@ class ISMDataset(Dataset):
         ref_seq = ref_seq[:position] + "ACGT"[nucleotide] + ref_seq[position + 1 :]
         if rc:
             ref_seq = ref_seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
-        
+
         return {
             "seq": ref_seq,
             "gene": self.gene_info.iloc[gene_idx]["our_gene_name"],
@@ -107,17 +123,31 @@ def main():
 
     # get list of all population-split genes
     gene_class_df = pd.read_csv(args.gene_class_path, sep="\t")
-    population_split_genes = gene_class_df[gene_class_df["class"] == "yri_split"].reset_index(drop=True)
+    population_split_genes = gene_class_df[
+        gene_class_df["class"] == "yri_split"
+    ].reset_index(drop=True)
     print(f"Number of population-split genes: {len(population_split_genes)}")
 
     # get chromosome and coordinate information for each gene
     gene_info = pd.read_csv(args.counts_path)
-    gene_info = gene_info[["our_gene_name", "Chr", "Coord"]].merge(
-        population_split_genes, left_on="our_gene_name", right_on="gene", how="inner"
-    ).drop(columns=["gene", "class"])
+    gene_info = (
+        gene_info[["our_gene_name", "Chr", "Coord"]]
+        .merge(
+            population_split_genes,
+            left_on="our_gene_name",
+            right_on="gene",
+            how="inner",
+        )
+        .drop(columns=["gene", "class"])
+    )
 
     # create dataset
-    test_ds = ISMDataset(gene_info=gene_info, fasta_path=args.fasta_path, seqlen=args.seqlen, use_reverse_complement=args.use_reverse_complement)
+    test_ds = ISMDataset(
+        gene_info=gene_info,
+        fasta_path=args.fasta_path,
+        seqlen=args.seqlen,
+        use_reverse_complement=args.use_reverse_complement,
+    )
 
     # create dataloader
     test_dl = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
