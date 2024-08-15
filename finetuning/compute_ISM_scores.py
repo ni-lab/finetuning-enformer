@@ -77,7 +77,7 @@ def main():
         )
     else:
         gene_info = pd.read_csv(args.counts_path)
-        gene_info = gene_info[gene_info["our_gene_name"] == args.gene]
+        gene_info = gene_info[gene_info["our_gene_name"] == args.gene_name]
         assert (
             len(gene_info) == 1
         ), "Gene not found in the counts file, or multiple genes found with the same name."
