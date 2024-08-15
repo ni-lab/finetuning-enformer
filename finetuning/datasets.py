@@ -1251,4 +1251,5 @@ class ISMDataset(torch.utils.data.Dataset):
             "position": position,
             "nucleotide": "ACGT"[nucleotide],
             "reverse_complement": rc,
+            "true_idx": gene_idx,
         }

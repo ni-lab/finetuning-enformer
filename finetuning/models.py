@@ -498,7 +498,12 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
                     Y = batch["y"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
             else:
                 raise ValueError("Invalid batch")
 
@@ -750,7 +755,12 @@ class PairwiseClassificationFloatPrecision(BaseModule):
                 Y = batch["Y"].float()
                 return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat, "true_idx": true_idx}
+                result = {}
+                result["Y_hat"] = Y_hat
+                for key in batch:
+                    if key != "seq":
+                        result[key] = batch[key]
+                return result
 
 
 class PairwiseRegressionFloatPrecision(BaseModule):
@@ -1149,7 +1159,12 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
                     Y = batch["z"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
 
         elif dataloader_idx == 1:  # this is the original human training data
             X = batch["seq"]
@@ -1472,7 +1487,12 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
                     Y = batch["y"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
 
             else:
                 raise ValueError("Invalid batch")
@@ -1585,7 +1605,12 @@ class SingleRegressionFloatPrecision(BaseModule):
             Y = batch["z"]
             return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat, "true_idx": true_idx}
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
 
 
 class SingleRegressionOnCountsFloatPrecision(BaseModule):
@@ -1703,4 +1728,9 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             Y = batch["y"]
             return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat, "true_idx": true_idx}
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
