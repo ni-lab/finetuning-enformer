@@ -241,9 +241,7 @@ class SampleH5Dataset(torch.utils.data.Dataset):
                 positions_that_were_rare[1],
                 major_allele[positions_that_were_rare[1]],
             ] = 1
-            filtered_seqs[np.where(self.genes == gene)[0]] = gene_seqs.reshape(
-                -1, 2, self.seqlen, 4
-            )
+            filtered_seqs[self.genes == gene] = gene_seqs.reshape(-1, 2, self.seqlen, 4)
             num_variants_filtered = ((gene_afs < af_threshold) & (gene_afs > 0)).sum()
             total_num_variants_filtered += num_variants_filtered
             assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
@@ -251,9 +249,8 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         # for genes that are not seen in the training set, we keep the original sequences
         for gene in tqdm(np.unique(self.genes)):
             if gene not in self.afs:
-                filtered_seqs[np.where(self.genes == gene)[0]] = self.seqs[
-                    self.genes == gene
-                ]
+                filtered_seqs[self.genes == gene] = self.seqs[self.genes == gene]
+            assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
 
         filtered_seqs_cache_file = h5py.File(self.filtered_seqs_cache_path, "w")
         filtered_seqs_cache_file.create_dataset("seqs", data=filtered_seqs)
@@ -1190,7 +1187,7 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             yield {"seq": seq, "y": y}
 
 
-class ISMDataset(Dataset):
+class ISMDataset(torch.utils.data.Dataset):
     """
     Takes in the gene info and reference genome, and generates every possible single nucleotide variant for each gene
     """

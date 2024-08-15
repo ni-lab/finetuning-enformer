@@ -16,7 +16,7 @@ from models import (
 from test_models import (
     CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete,
     predict)
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 
