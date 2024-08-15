@@ -895,7 +895,12 @@ class PairwiseRegressionFloatPrecision(BaseModule):
                 Y = batch["z"].float()
                 return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat, "true_idx": true_idx}
+                result = {}
+                result["Y_hat"] = Y_hat
+                for key in batch:
+                    if key != "seq":
+                        result[key] = batch[key]
+                return result
 
 
 class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):

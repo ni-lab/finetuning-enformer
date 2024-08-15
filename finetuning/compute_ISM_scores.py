@@ -5,17 +5,14 @@ from argparse import ArgumentParser
 import numpy as np
 import pandas as pd
 import torch
-from datasets import SampleH5Dataset
-from enformer_pytorch.data import str_to_one_hot
+from datasets import ISMDataset
 from lightning import Trainer
-from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
     PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseRegressionFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
-from pyfaidx import Fasta
 from test_models import (
     CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete,
     predict)
@@ -51,73 +48,6 @@ def parse_args():
     )
     parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
     return parser.parse_args()
-
-
-class ISMDataset(Dataset):
-    """
-    Takes in the gene info and reference genome, and generates every possible single nucleotide variant for each gene
-    """
-
-    def __init__(self, gene_info, fasta_path, seqlen, use_reverse_complement):
-        self.gene_info = (
-            gene_info  # must contain columns "our_gene_name", "Chr", "Coord"
-        )
-        self.fasta = Fasta(fasta_path)
-        self.seqlen = seqlen
-        self.use_reverse_complement = use_reverse_complement
-
-        # get the reference sequence for each gene from the fasta file
-        ref_seqs = []
-        print("Getting reference sequences for all genes")
-        for i in tqdm(range(len(self.gene_info))):
-            row = self.gene_info.iloc[i]
-            gene = row["our_gene_name"]
-            if pd.isna(gene):
-                raise ValueError("Gene name is missing")
-            chrom = row["Chr"]
-            bp_start = row["Coord"] - self.seqlen // 2
-            bp_end = bp_start + self.seqlen - 1
-            ref_seq = self.fasta[f"chr{chrom}"][bp_start - 1 : bp_end].seq.upper()
-            assert len(ref_seq) == self.seqlen
-            ref_seqs.append(ref_seq)
-        self.gene_info["ref_seq"] = ref_seqs
-
-    def __len__(self):
-        return (
-            len(self.gene_info["ref_seq"])
-            * self.seqlen
-            * 4
-            * (1 + int(self.use_reverse_complement))
-        )
-
-    def __getitem__(self, idx):
-        gene_idx = idx // (self.seqlen * 4 * (1 + int(self.use_reverse_complement)))
-        position_nucleotide_rc_offset = idx % (
-            self.seqlen * 4 * (1 + int(self.use_reverse_complement))
-        )
-        position = position_nucleotide_rc_offset // (
-            4 * (1 + int(self.use_reverse_complement))
-        )
-        nucleotide_rc_offset = position_nucleotide_rc_offset % (
-            4 * (1 + int(self.use_reverse_complement))
-        )
-        nucleotide = nucleotide_rc_offset // (1 + int(self.use_reverse_complement))
-        rc = nucleotide_rc_offset % (1 + int(self.use_reverse_complement))
-
-        ref_seq = self.gene_info.iloc[gene_idx]["ref_seq"]
-        ref_seq = ref_seq[:position] + "ACGT"[nucleotide] + ref_seq[position + 1 :]
-        if rc:
-            ref_seq = ref_seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
-
-        ref_seq = str_to_one_hot(ref_seq)
-
-        return {
-            "seq": ref_seq,
-            "gene": self.gene_info.iloc[gene_idx]["our_gene_name"],
-            "position": position,
-            "nucleotide": "ACGT"[nucleotide],
-            "reverse_complement": rc,
-        }
 
 
 def main():
