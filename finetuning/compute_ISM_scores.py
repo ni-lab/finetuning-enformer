@@ -39,6 +39,7 @@ def parse_args():
         ],
     )
     parser.add_argument("checkpoints_dir", type=str, default=None)
+    parser.add_argument("--gene_name", type=str, default=None)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
@@ -54,25 +55,33 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    # get list of all population-split genes
-    gene_class_df = pd.read_csv(args.gene_class_path)
-    population_split_genes = gene_class_df[
-        gene_class_df["class"] == "yri_split"
-    ].reset_index(drop=True)
-    print(f"Number of population-split genes: {len(population_split_genes)}")
+    if args.gene_name is None:
+        # get list of all population-split genes
+        gene_class_df = pd.read_csv(args.gene_class_path)
+        population_split_genes = gene_class_df[
+            gene_class_df["class"] == "yri_split"
+        ].reset_index(drop=True)
+        print(f"Number of population-split genes: {len(population_split_genes)}")
 
-    # get chromosome and coordinate information for each gene
-    gene_info = pd.read_csv(args.counts_path)
-    gene_info = (
-        gene_info[["our_gene_name", "Chr", "Coord"]]
-        .merge(
-            population_split_genes,
-            left_on="our_gene_name",
-            right_on="gene",
-            how="inner",
+        # get chromosome and coordinate information for each gene
+        gene_info = pd.read_csv(args.counts_path)
+        gene_info = (
+            gene_info[["our_gene_name", "Chr", "Coord"]]
+            .merge(
+                population_split_genes,
+                left_on="our_gene_name",
+                right_on="gene",
+                how="inner",
+            )
+            .drop(columns=["gene", "class"])
         )
-        .drop(columns=["gene", "class"])
-    )
+    else:
+        gene_info = pd.read_csv(args.counts_path)
+        gene_info = gene_info[gene_info["our_gene_name"] == args.gene]
+        assert (
+            len(gene_info) == 1
+        ), "Gene not found in the counts file, or multiple genes found with the same name."
+        gene_info = gene_info[["our_gene_name", "Chr", "Coord"]].reset_index(drop=True)
 
     # create dataset
     test_ds = ISMDataset(
@@ -84,6 +93,12 @@ def main():
 
     # create dataloader
     test_dl = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
+
+    # create subdir for the gene if gene_name is provided
+    if args.gene_name is not None:
+        gene_dir = os.path.join(args.predictions_dir, args.gene_name)
+        os.makedirs(gene_dir, exist_ok=True)
+        args.predictions_dir = gene_dir
 
     # get number of gpus
     n_gpus = torch.cuda.device_count()
