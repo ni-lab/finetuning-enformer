@@ -195,7 +195,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print("Predicting using SingleRegressionFloatPrecision")
         elif args.model_type == "single_regression_counts":
@@ -204,7 +204,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print("Predicting using SingleRegressionOnCountsFloatPrecision")
         elif args.model_type == "regression":
@@ -213,7 +213,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print("Predicting using PairwiseRegressionFloatPrecision")
         elif args.model_type == "joint_regression":
@@ -222,7 +222,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print(
                 "Predicting using PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision"
@@ -233,7 +233,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print("Predicting using PairwiseClassificationFloatPrecision")
         elif args.model_type == "joint_classification":
@@ -242,7 +242,7 @@ def main():
                 weight_decay=0,
                 use_scheduler=False,
                 warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins=(args.seqlen // 128),
             )
             print(
                 "Predicting using PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision"
