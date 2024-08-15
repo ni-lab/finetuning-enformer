@@ -1239,6 +1239,10 @@ class ISMDataset(torch.utils.data.Dataset):
         rc = nucleotide_rc_offset % (1 + int(self.use_reverse_complement))
 
         ref_seq = self.gene_info.iloc[gene_idx]["ref_seq"]
+        if ref_seq[position] == "ACGT"[nucleotide]:
+            is_ref = 1
+        else:
+            is_ref = 0
         ref_seq = ref_seq[:position] + "ACGT"[nucleotide] + ref_seq[position + 1 :]
         if rc:
             ref_seq = ref_seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
@@ -1250,7 +1254,8 @@ class ISMDataset(torch.utils.data.Dataset):
             "gene": self.gene_info.iloc[gene_idx]["our_gene_name"],
             "position": position,
             "nucleotide": "ACGT"[nucleotide],
-            "reverse_complement": rc,
+            "is_ref": is_ref,
+            "reverse_complement": int(rc),
             "true_idx": gene_idx,
             "idx": idx,
         }
