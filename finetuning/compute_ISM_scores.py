@@ -84,7 +84,7 @@ class ISMDataset(Dataset):
 
     def __len__(self):
         return (
-            len(self.ref_seqs)
+            len(self.gene_info["ref_seq"])
             * self.seqlen
             * 4
             * (1 + int(self.use_reverse_complement))
