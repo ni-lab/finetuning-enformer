@@ -264,7 +264,6 @@ def main():
     reverse_complements = np.concatenate(reverse_complements, axis=0)
     idxs = np.concatenate(idxs, axis=0)
     batch_indices = np.concatenate(batch_indices, axis=0)
-    pdb.set_trace()
 
     # sort the predictions, genes, positions, nucleotides, is_refs, reverse_complements, idxs and batch_indices based on the original order
     sorted_idxs = np.argsort(batch_indices)
