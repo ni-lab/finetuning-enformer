@@ -14,8 +14,7 @@ from models import (
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
 from test_models import (
-    CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete,
-    predict)
+    CustomWriter, find_best_checkpoint_and_verify_that_training_is_complete)
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -49,6 +48,19 @@ def parse_args():
     )
     parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
     return parser.parse_args()
+
+
+def predict(model, dl, device) -> np.ndarray:
+    model.eval()
+    Y_all = []
+
+    with torch.no_grad():
+        for batch in tqdm(dl):
+            X = batch["seq"].to(device)
+            Y = model(X, no_haplotype=True).detach().cpu().numpy()
+            Y_all.append(Y)
+            assert len(Y) == X.shape[0]
+    return np.concatenate(Y_all, axis=0)
 
 
 def main():
@@ -252,6 +264,7 @@ def main():
     reverse_complements = np.concatenate(reverse_complements, axis=0)
     idxs = np.concatenate(idxs, axis=0)
     batch_indices = np.concatenate(batch_indices, axis=0)
+    pdb.set_trace()
 
     # sort the predictions, genes, positions, nucleotides, is_refs, reverse_complements, idxs and batch_indices based on the original order
     sorted_idxs = np.argsort(batch_indices)

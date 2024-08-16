@@ -150,6 +150,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -175,8 +176,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
                 :, self.center_start : self.center_end
             ]  # get the center bins, (S * H, sum_center_n_bins)
             X = X.sum(dim=1)  # sum the center bins, (S * H)
-            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
-            Y = Y.mean(dim=1)  # (S)
+            if not no_haplotype:
+                Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+                Y = Y.mean(dim=1)  # (S)
+            else:
+                Y = X
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -573,6 +577,7 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -592,8 +597,11 @@ class PairwiseClassificationFloatPrecision(BaseModule):
             X = X[:, :, self.pairwise_output_head_ind]
             X = X[:, self.center_start : self.center_end]
             X = X.sum(dim=1)
-            Y = rearrange(X, "(S H) -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+                Y = Y.mean(dim=1)  # (S)
+            else:
+                Y = X
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -797,6 +805,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -815,8 +824,11 @@ class PairwiseRegressionFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -958,6 +970,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -976,8 +989,11 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1229,6 +1245,7 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -1250,8 +1267,11 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1550,6 +1570,7 @@ class SingleRegressionFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length
@@ -1568,8 +1589,11 @@ class SingleRegressionFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1655,6 +1679,7 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -1676,8 +1701,11 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
