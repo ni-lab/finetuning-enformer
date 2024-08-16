@@ -212,43 +212,105 @@ def main():
             # wait for all processes to finish writing the predictions
             torch.distributed.barrier()
 
-    # preds = []
-    # true_idxs = []
-    # batch_indices = []
-    # for i in range(n_gpus):
-    #     p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
-    #     p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
-    #     preds.append(p_yhat)
-    #     true_idxs.append(np.concatenate([batch["true_idx"] for batch in p]))
+    preds = []
+    genes = []
+    positions = []
+    nucleotides = []
+    is_refs = []
+    reverse_complements = []
+    idxs = []
+    batch_indices = []
+    for i in range(n_gpus):
+        p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
+        # predictions
+        p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
+        preds.append(p_yhat)
+        # genes
+        genes.append(np.concatenate([batch["gene"] for batch in p]))
+        # positions
+        positions.append(np.concatenate([batch["position"] for batch in p]))
+        # nucleotides
+        nucleotides.append(np.concatenate([batch["nucleotide"] for batch in p]))
+        # is_ref
+        is_refs.append(np.concatenate([batch["is_ref"] for batch in p]))
+        # reverse_complement
+        reverse_complements.append(
+            np.concatenate([batch["reverse_complement"] for batch in p])
+        )
+        # idxs
+        idxs.append(np.concatenate([batch["idx"] for batch in p]))
 
-    #     bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
-    #     bi = np.concatenate([inds for inds in bi])
-    #     batch_indices.append(bi)
+        bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
+        bi = np.concatenate([inds for inds in bi])
+        batch_indices.append(bi)
 
-    # test_preds = np.concatenate(preds, axis=0)
-    # true_idxs = np.concatenate(true_idxs, axis=0)
-    # batch_indices = np.concatenate(batch_indices, axis=0)
+    preds = np.concatenate(preds, axis=0)
+    genes = np.concatenate(genes, axis=0)
+    positions = np.concatenate(positions, axis=0)
+    nucleotides = np.concatenate(nucleotides, axis=0)
+    is_refs = np.concatenate(is_refs, axis=0)
+    reverse_complements = np.concatenate(reverse_complements, axis=0)
+    idxs = np.concatenate(idxs, axis=0)
+    batch_indices = np.concatenate(batch_indices, axis=0)
 
-    # # sort the predictions, true_idxs and batch_indices based on the original order
-    # sorted_idxs = np.argsort(batch_indices)
-    # test_preds = test_preds[sorted_idxs]
-    # true_idxs = true_idxs[sorted_idxs]
+    # sort the predictions, genes, positions, nucleotides, is_refs, reverse_complements, idxs and batch_indices based on the original order
+    sorted_idxs = np.argsort(batch_indices)
+    idxs = idxs[sorted_idxs]
+    # assert that idxs are sorted in ascending order
+    assert np.all(np.diff(idxs) >= 0)
+    # shape of each of the following should be (n_genes, n_positions, n_nucleotides, num_strands)
+    preds = preds[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
+    genes = genes[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
+    positions = positions[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
+    nucleotides = nucleotides[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
+    is_refs = is_refs[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
+    reverse_complements = reverse_complements[sorted_idxs].reshape(
+        -1, args.seqlen, 4, (1 + args.use_reverse_complement)
+    )
 
-    # # now average the predictions that have the same true index
-    # unique_true_idxs = np.unique(true_idxs)
-    # unique_true_idxs = np.sort(unique_true_idxs)
-    # averaged_preds = []
-    # for idx in unique_true_idxs:
-    #     idx_mask = true_idxs == idx
-    #     avg_pred = np.mean(test_preds[idx_mask], axis=0)
-    #     averaged_preds.append(avg_pred)
-    # test_preds = np.array(averaged_preds)
+    # now average the predictions for forward and reverse strands
+    preds = np.mean(preds, axis=-1)  # shape: (n_genes, n_positions, n_nucleotides)
+    genes = genes[:, 0, 0, 0]  # shape: (n_genes,)
+    positions = positions[:, :, 0, 0]  # shape: (n_genes, n_positions)
+    nucleotides = nucleotides[
+        :, :, :, 0
+    ]  # shape: (n_genes, n_positions, n_nucleotides)
+    is_refs = is_refs[:, :, :, 0]  # shape: (n_genes, n_positions, n_nucleotides)
 
-    # assert test_preds.size == test_ds.genes.size
-    # test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
-    # np.savez(
-    #     test_output_path, preds=test_preds, genes=test_ds.genes, samples=test_ds.samples
-    # )
+    # now compute the ISM scores with respect to the reference nucleotide at each position
+    ref_nucleotide_idxs = np.argmax(is_refs, axis=-1)  # shape: (n_genes, n_positions)
+    ref_nucleotide_preds = np.array(
+        [
+            preds[i, j, ref_nucleotide_idxs[i, j]]
+            for i in range(preds.shape[0])
+            for j in range(preds.shape[1])
+        ]
+    ).reshape(
+        preds.shape[:2]
+    )  # shape: (n_genes, n_positions)
+    ism_scores = (
+        preds - ref_nucleotide_preds[:, :, np.newaxis]
+    )  # shape: (n_genes, n_positions, n_nucleotides)
+
+    # save the ISM scores
+    ism_output_path = os.path.join(args.predictions_dir, "ism_scores.npz")
+    np.savez(
+        ism_output_path,
+        ism_scores=ism_scores,
+        genes=genes,
+        preds=preds,
+        is_refs=is_refs,
+    )
 
 
 if __name__ == "__main__":
