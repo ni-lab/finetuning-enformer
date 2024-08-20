@@ -142,6 +142,12 @@ def main():
                 n_total_bins=(args.seqlen // 128),
             )
             print("Predicting using BaselineEnformer")
+
+            trainer.predict(
+                model,
+                test_dl,
+                return_predictions=False,
+            )
         else:
             # find the best checkpoint and verify that the training is complete
             task = "regression" if "regression" in args.model_type else "classification"
@@ -218,12 +224,12 @@ def main():
                     "Invalid model type. Please provide a valid model type."
                 )
 
-        trainer.predict(
-            model,
-            test_dl,
-            ckpt_path=best_ckpt_path,
-            return_predictions=False,
-        )
+            trainer.predict(
+                model,
+                test_dl,
+                ckpt_path=best_ckpt_path,
+                return_predictions=False,
+            )
         print("Done predicting.")
 
     # read predictions from the files and concatenate them
