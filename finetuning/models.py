@@ -1804,3 +1804,82 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
                 if key != "seq":
                     result[key] = batch[key]
             return result
+
+
+class BaselineEnformer(BaseModule):
+    def __init__(
+        self,
+        n_total_bins: int,
+        sum_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+        output_head_name="human",
+        output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
+    ):
+        super().__init__(
+            # dummy values for training hyperparameters since we are only doing inference using this model
+            lr=0.0,
+            weight_decay=0.0,
+            use_scheduler=False,
+            warmup_steps=0,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
+
+        self.output_head_name = output_head_name
+        self.output_head_ind = output_head_ind
+        self.center_start = (n_total_bins - sum_center_n_bins) // 2
+        self.center_end = self.center_start + sum_center_n_bins
+
+    def forward(
+        self,
+        X,
+        no_haplotype: bool = False,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if X.shape[-1] != 4:
+            X = seq_indices_to_one_hot(X)
+        if len(X.shape) == 4:
+            X = rearrange(X, "S H L NC -> (S H) L NC")
+        X = self.base(
+            X,
+            head=self.output_head_name,
+            target_length=self.hparams.n_total_bins,
+        )
+        assert X.shape[1] == self.hparams.n_total_bins
+
+        X = X[:, :, self.output_head_ind]
+        X = X[:, self.center_start : self.center_end]
+        X = X.sum(dim=1)
+        if not no_haplotype:
+            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+            Y = Y.mean(dim=1)  # (S)
+        else:
+            Y = X
+        return Y
+
+    def predict_step(self, batch, batch_idx):
+        assert (
+            "seq" in batch
+        ), "BaselineEnformer is only for inference and requires 'seq' in the batch"
+        X = batch["seq"]
+        true_idx = batch["true_idx"]
+        if (
+            "is_ref" in batch
+        ):  # this is the ISM data, so run forward pass without haplotype averaging
+            Y_hat = self(X, no_haplotype=True)
+            assert Y_hat.shape[0] == X.shape[0]
+        else:
+            Y_hat = self(X)
+        if "Y" in batch:
+            Y = batch["Y"].float()
+            return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
+        else:
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
