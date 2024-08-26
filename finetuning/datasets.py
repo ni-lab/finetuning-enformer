@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import pickle
 
 import h5py
 import numpy as np
@@ -8,7 +9,9 @@ import pandas as pd
 import torch
 import utils
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
+from pyfaidx import Fasta
 from torchdata.datapipes.iter import FileLister, FileOpener
+from tqdm import tqdm
 
 
 def subsample_gene_to_idxs(
@@ -61,6 +64,12 @@ class SampleH5Dataset(torch.utils.data.Dataset):
         random_shift_max: int = 0,
         return_reverse_complement: bool = False,
         shift_max: int = 0,
+        remove_rare_variants: bool = False,
+        rare_variant_af_threshold: float = 0.05,
+        train_h5_path_for_af_computation: str = None,
+        force_recompute_afs: bool = False,
+        afs_cache_path: str = None,
+        filtered_seqs_cache_path: str = None,
     ):
         """
         If prefetch_seqs is True, then all sequences are loaded into memory. This makes initialization
@@ -114,6 +123,144 @@ class SampleH5Dataset(torch.utils.data.Dataset):
             == self.Y.size
             == self.Z.size
             == self.percentiles.size
+        )
+
+        # compute allele freqs from the training set if we are removing rare variants
+        if remove_rare_variants:
+            assert train_h5_path_for_af_computation is not None
+            self.afs_cache_path = afs_cache_path
+            self.filtered_seqs_cache_path = filtered_seqs_cache_path
+            if self.filtered_seqs_cache_path is None:
+                self.filtered_seqs_cache_path = (
+                    h5_path
+                    + f".filtered_seqs.af_threshold_{rare_variant_af_threshold}.h5"
+                )
+            print(
+                f"Filtering out rare variants with AF < {rare_variant_af_threshold}..."
+            )
+            if os.path.exists(self.filtered_seqs_cache_path):
+                print(
+                    f"Loading filtered sequences from {self.filtered_seqs_cache_path}"
+                )
+            else:
+                if self.afs_cache_path is None:
+                    self.afs_cache_path = train_h5_path_for_af_computation + ".afs.pkl"
+                self.afs = self.__compute_afs(
+                    train_h5_path_for_af_computation, force_recompute_afs
+                )
+                self.__filter_rare_variants(rare_variant_af_threshold)
+            self.filtered_seqs_cache_file = h5py.File(
+                self.filtered_seqs_cache_path, "r"
+            )
+            self.seqs = self.filtered_seqs_cache_file["seqs"]
+
+    def __compute_afs(self, train_h5_path: str, force_recompute_afs: bool):
+        """
+        Compute allele freqs from the training set for each variant.
+        Args:
+            train_h5_path: path to the training h5 file
+            force_recompute_afs: if True, recompute the allele freqs even if they are already exist
+        Returns:
+            allele_freqs: a dictionary where gene names are keys and values are numpy arrays of allele freqs
+        """
+        train_h5_file = h5py.File(train_h5_path, "r")
+        train_genes = train_h5_file["genes"][:].astype(str)
+
+        if os.path.exists(self.afs_cache_path) and not force_recompute_afs:
+            with open(self.afs_cache_path, "rb") as f:
+                afs = pickle.load(f)
+
+            # check that the MAFs are computed for all genes
+            assert set(afs.keys()) == set(np.unique(train_genes))
+
+            print(f"Loaded cached allele freqs from {self.afs_cache_path}")
+
+            return afs
+
+        train_samples = train_h5_file["samples"][:].astype(str)
+        train_seqs = train_h5_file["seqs"]
+        assert train_seqs.shape[2] >= self.seqlen
+        train_Y = train_h5_file["Y"][:]
+        train_Z = train_h5_file["Z"][:]
+        train_percentiles = train_h5_file["P"][:]
+
+        assert (
+            train_genes.size
+            == train_samples.size
+            == train_seqs.shape[0]
+            == train_Y.size
+            == train_Z.size
+            == train_percentiles.size
+        )
+
+        print(f"Computing allele freqs from {train_h5_path}...")
+
+        afs = {}
+        for gene in tqdm(np.unique(train_genes)):
+            gene_idxs = train_genes == gene
+            gene_seqs = train_seqs[gene_idxs]  # (n_seqs, 2, length, 4)
+            gene_allele_seqs = gene_seqs.reshape(
+                -1, self.seqlen, 4
+            )  # (n_seqs * 2, length, 4)
+            gene_allele_counts = gene_allele_seqs.sum(axis=0)  # (length, 4)
+            gene_allele_freqs = (
+                gene_allele_counts / gene_allele_seqs.shape[0]
+            )  # (length, 4)
+            afs[gene] = gene_allele_freqs
+
+        with open(self.afs_cache_path, "wb+") as f:
+            pickle.dump(afs, f)
+
+        print(f"Computed allele freqs and saved to {self.afs_cache_path}")
+
+        return afs
+
+    def __filter_rare_variants(self, af_threshold: float):
+        """
+        Filter out rare variants from the dataset by replacing the rare variants with the major allele.
+        Args:
+            af_threshold: allele frequency threshold below which variants are considered rare
+        """
+        filtered_seqs = np.zeros(
+            self.seqs.shape, dtype=np.float32
+        )  # (n_seqs, 2, length, 4)
+        total_num_variants_filtered = 0
+        for gene in tqdm(self.afs):
+            gene_afs = self.afs[gene]
+            rare_variant_mask = gene_afs < af_threshold
+            gene_seqs = self.seqs[self.genes == gene]  # (n_seqs, 2, length, 4)
+            gene_seqs = gene_seqs.reshape(-1, self.seqlen, 4)  # (n_seqs * 2, length, 4)
+            gene_seqs[:, rare_variant_mask] = 0  # zero out the rare variants
+            # at positions where we zeroed out the rare variants, we need to update them to the major allele
+            major_allele = gene_afs.argmax(axis=-1)
+            positions_that_were_rare = np.where(
+                gene_seqs.sum(axis=-1) == 0
+            )  # positions where the sum of the one-hot encoding is 0
+            gene_seqs[
+                positions_that_were_rare[0],
+                positions_that_were_rare[1],
+                major_allele[positions_that_were_rare[1]],
+            ] = 1
+            filtered_seqs[self.genes == gene] = gene_seqs.reshape(-1, 2, self.seqlen, 4)
+            num_variants_filtered = ((gene_afs < af_threshold) & (gene_afs > 0)).sum()
+            total_num_variants_filtered += num_variants_filtered
+            assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
+
+        # for genes that are not seen in the training set, we keep the original sequences
+        for gene in tqdm(np.unique(self.genes)):
+            if gene not in self.afs:
+                filtered_seqs[self.genes == gene] = self.seqs[self.genes == gene]
+            assert np.all(filtered_seqs[self.genes == gene].sum(axis=-1) == 1)
+
+        filtered_seqs_cache_file = h5py.File(self.filtered_seqs_cache_path, "w")
+        filtered_seqs_cache_file.create_dataset("seqs", data=filtered_seqs)
+        filtered_seqs_cache_file.close()
+
+        print(
+            "Done filtering rare variants. Total number of variants filtered:",
+            total_num_variants_filtered,
+            ". Filtered sequences saved to",
+            self.filtered_seqs_cache_path,
         )
 
     def get_total_n_bins(self):
@@ -1038,3 +1185,202 @@ class EnformerDataset(torch.utils.data.IterableDataset):
                 y = torch.tensor(targets.copy()).float()
 
             yield {"seq": seq, "y": y}
+
+
+class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        file_path: str,
+        split: str,
+        reverse_complement: bool = False,
+        shift_max: int = 0,
+    ):
+        super().__init__()
+
+        assert split in [
+            "train",
+            "val",
+            "test",
+        ], "split must be one of train, val, test"
+
+        self.file_path = file_path
+        self.split = split
+
+        self.data = pd.read_csv(file_path)
+        self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
+
+        self.ref_sequences = self.data["ref_sequence"].values
+        self.alt_sequences = self.data["alt_sequence"].values
+        self.cell_types = []
+        self.variant_effects = []
+        for col in self.data.columns:
+            if "_normalized_variant_effect" in col:
+                self.cell_types.append(col.split("_")[0])
+                self.variant_effects.append(self.data[col].values)
+        self.variant_effects = np.stack(self.variant_effects, axis=1)
+        assert self.variant_effects.shape[1] == len(self.cell_types)
+        assert self.variant_effects.shape[0] == len(self.ref_sequences)
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+        self.ref_sequences = np.array(
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.ref_sequences]
+        )
+        self.alt_sequences = np.array(
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.alt_sequences]
+        )
+        assert (
+            self.ref_sequences.shape[0]
+            == self.alt_sequences.shape[0]
+            == self.variant_effects.shape[0]
+        )
+        assert self.ref_sequences.shape[1] == self.alt_sequences.shape[1] == 200
+
+        self.mask = ~np.isnan(self.variant_effects)
+        assert self.mask.shape[0] == self.variant_effects.shape[0]
+        assert self.mask.shape[1] == self.variant_effects.shape[1]
+
+        self.reverse_complement = reverse_complement
+        self.shift_max = shift_max
+        if self.split == "val" or self.split == "test":
+            if self.reverse_complement or self.shift_max > 0:
+                raise ValueError(
+                    "reverse_complement must be False and shift_max must be 0 for val and test splits"
+                )
+        else:
+            if not (self.reverse_complement or self.shift_max > 0):
+                print(
+                    "WARNING: reverse_complement and shift_max are both False for train split. Setting these to True can improve model performance."
+                )
+
+    def get_num_cells(self):
+        return self.variant_effects.shape[1]
+
+    def get_cell_names(self):
+        return self.cell_types
+
+    def get_total_n_bins(self):
+        seqlen = len(self.ref_sequences[0])
+        return int(np.ceil(seqlen / 128))
+
+    def __len__(self):
+        return len(self.ref_sequences)
+
+    def __getitem__(self, idx):
+        ref_seq = self.ref_sequences[idx]
+        alt_seq = self.alt_sequences[idx]
+        variant_effect = self.variant_effects[idx]
+        mask = self.mask[idx]
+
+        # one-hot encode the sequences
+        ref_seq = seq_indices_to_one_hot(ref_seq).detach().numpy()
+        alt_seq = seq_indices_to_one_hot(alt_seq).detach().numpy()
+
+        if self.reverse_complement:
+            coin_flip = np.random.choice([True, False])
+            if coin_flip:
+                ref_seq = np.flip(ref_seq, axis=0)
+                alt_seq = np.flip(alt_seq, axis=0)
+                variant_effect = np.flip(variant_effect, axis=0)
+
+                # order of bases is ACGT, so reverse-complement is just flipping the sequence
+                ref_seq = np.flip(ref_seq, axis=2)
+                alt_seq = np.flip(alt_seq, axis=2)
+
+        if self.shift_max > 0:
+            shift = np.random.randint(-self.shift_max, self.shift_max + 1)
+            ref_seq = np.roll(ref_seq, shift, axis=0)
+            alt_seq = np.roll(alt_seq, shift, axis=0)
+
+            # zero out the shifted positions
+            if shift > 0:
+                ref_seq[:shift] = 0
+                alt_seq[:shift] = 0
+            elif shift < 0:
+                ref_seq[shift:] = 0
+                alt_seq[shift:] = 0
+
+        ref_seq = torch.tensor(ref_seq.copy()).float()
+        alt_seq = torch.tensor(alt_seq.copy()).float()
+        variant_effect = torch.tensor(variant_effect.copy()).float()
+        mask = torch.tensor(mask.copy()).bool()
+
+        return {
+            "ref_seq": ref_seq,
+            "alt_seq": alt_seq,
+            "variant_effect": variant_effect,
+            "mask": mask,
+        }
+
+
+class ISMDataset(torch.utils.data.Dataset):
+    """
+    Takes in the gene info and reference genome, and generates every possible single nucleotide variant for each gene
+    """
+
+    def __init__(self, gene_info, fasta_path, seqlen, use_reverse_complement):
+        self.gene_info = (
+            gene_info  # must contain columns "our_gene_name", "Chr", "Coord"
+        )
+        self.fasta = Fasta(fasta_path)
+        self.seqlen = seqlen
+        self.use_reverse_complement = use_reverse_complement
+
+        # get the reference sequence for each gene from the fasta file
+        ref_seqs = []
+        print("Getting reference sequences for all genes")
+        for i in tqdm(range(len(self.gene_info))):
+            row = self.gene_info.iloc[i]
+            gene = row["our_gene_name"]
+            if pd.isna(gene):
+                raise ValueError("Gene name is missing")
+            chrom = row["Chr"]
+            bp_start = row["Coord"] - self.seqlen // 2
+            bp_end = bp_start + self.seqlen - 1
+            ref_seq = self.fasta[f"chr{chrom}"][bp_start - 1 : bp_end].seq.upper()
+            assert len(ref_seq) == self.seqlen
+            ref_seqs.append(ref_seq)
+        self.gene_info["ref_seq"] = ref_seqs
+
+    def __len__(self):
+        return (
+            len(self.gene_info["ref_seq"])
+            * self.seqlen
+            * 4
+            * (1 + int(self.use_reverse_complement))
+        )
+
+    def __getitem__(self, idx):
+        gene_idx = idx // (self.seqlen * 4 * (1 + int(self.use_reverse_complement)))
+        position_nucleotide_rc_offset = idx % (
+            self.seqlen * 4 * (1 + int(self.use_reverse_complement))
+        )
+        position = position_nucleotide_rc_offset // (
+            4 * (1 + int(self.use_reverse_complement))
+        )
+        nucleotide_rc_offset = position_nucleotide_rc_offset % (
+            4 * (1 + int(self.use_reverse_complement))
+        )
+        nucleotide = nucleotide_rc_offset // (1 + int(self.use_reverse_complement))
+        rc = nucleotide_rc_offset % (1 + int(self.use_reverse_complement))
+
+        ref_seq = self.gene_info.iloc[gene_idx]["ref_seq"]
+        if ref_seq[position] == "ACGT"[nucleotide]:
+            is_ref = 1
+        else:
+            is_ref = 0
+        ref_seq = ref_seq[:position] + "ACGT"[nucleotide] + ref_seq[position + 1 :]
+        if rc:
+            ref_seq = ref_seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
+
+        ref_seq = str_to_one_hot(ref_seq)
+
+        return {
+            "seq": ref_seq,
+            "gene": self.gene_info.iloc[gene_idx]["our_gene_name"],
+            "position": position,
+            "nucleotide": "ACGT"[nucleotide],
+            "is_ref": is_ref,
+            "reverse_complement": int(rc),
+            "true_idx": gene_idx,
+            "idx": idx,
+        }

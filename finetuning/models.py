@@ -150,6 +150,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -175,8 +176,11 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
                 :, self.center_start : self.center_end
             ]  # get the center bins, (S * H, sum_center_n_bins)
             X = X.sum(dim=1)  # sum the center bins, (S * H)
-            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
-            Y = Y.mean(dim=1)  # (S)
+            if not no_haplotype:
+                Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+                Y = Y.mean(dim=1)  # (S)
+            else:
+                Y = X
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -493,12 +497,23 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
-                Y_hat = self(X)
+                if (
+                    "is_ref" in batch
+                ):  # this is the ISM data, so run forward pass without haplotype averaging
+                    Y_hat = self(X, no_haplotype=True)
+                    assert Y_hat.shape[0] == X.shape[0]
+                else:
+                    Y_hat = self(X)
                 if "y" in batch:
                     Y = batch["y"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
             else:
                 raise ValueError("Invalid batch")
 
@@ -568,6 +583,7 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -587,8 +603,11 @@ class PairwiseClassificationFloatPrecision(BaseModule):
             X = X[:, :, self.pairwise_output_head_ind]
             X = X[:, self.center_start : self.center_end]
             X = X.sum(dim=1)
-            Y = rearrange(X, "(S H) -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+                Y = Y.mean(dim=1)  # (S)
+            else:
+                Y = X
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -745,12 +764,23 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
             true_idx = batch["true_idx"]
-            Y_hat = self(X)
+            if (
+                "is_ref" in batch
+            ):  # this is the ISM data, so run forward pass without haplotype averaging
+                Y_hat = self(X, no_haplotype=True)
+                assert Y_hat.shape[0] == X.shape[0]
+            else:
+                Y_hat = self(X)
             if "Y" in batch:
                 Y = batch["Y"].float()
                 return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat, "true_idx": true_idx}
+                result = {}
+                result["Y_hat"] = Y_hat
+                for key in batch:
+                    if key != "seq":
+                        result[key] = batch[key]
+                return result
 
 
 class PairwiseRegressionFloatPrecision(BaseModule):
@@ -787,6 +817,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -805,8 +836,11 @@ class PairwiseRegressionFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -890,12 +924,23 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
             true_idx = batch["true_idx"]
-            Y_hat = self(X)
+            if (
+                "is_ref" in batch
+            ):  # this is the ISM data, so run forward pass without haplotype averaging
+                Y_hat = self(X, no_haplotype=True)
+                assert Y_hat.shape[0] == X.shape[0]
+            else:
+                Y_hat = self(X)
             if "z" in batch:
                 Y = batch["z"].float()
                 return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
             else:
-                return {"Y_hat": Y_hat, "true_idx": true_idx}
+                result = {}
+                result["Y_hat"] = Y_hat
+                for key in batch:
+                    if key != "seq":
+                        result[key] = batch[key]
+                return result
 
 
 class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
@@ -943,6 +988,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -961,8 +1007,11 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1139,12 +1188,23 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
-                Y_hat = self(X)
+                if (
+                    "is_ref" in batch
+                ):  # this is the ISM data, so run forward pass without haplotype averaging
+                    Y_hat = self(X, no_haplotype=True)
+                    assert Y_hat.shape[0] == X.shape[0]
+                else:
+                    Y_hat = self(X)
                 if "z" in batch:
                     Y = batch["z"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
 
         elif dataloader_idx == 1:  # this is the original human training data
             X = batch["seq"]
@@ -1209,6 +1269,7 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -1230,8 +1291,11 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1462,12 +1526,23 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
-                Y_hat = self(X)
+                if (
+                    "is_ref" in batch
+                ):  # this is the ISM data, so run forward pass without haplotype averaging
+                    Y_hat = self(X, no_haplotype=True)
+                    assert Y_hat.shape[0] == X.shape[0]
+                else:
+                    Y_hat = self(X)
                 if "y" in batch:
                     Y = batch["y"].float()
                     return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
                 else:
-                    return {"Y_hat": Y_hat, "true_idx": true_idx}
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
 
             else:
                 raise ValueError("Invalid batch")
@@ -1525,6 +1600,7 @@ class SingleRegressionFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length
@@ -1543,8 +1619,11 @@ class SingleRegressionFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)
             Y = self.prediction_head(X)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1575,12 +1654,23 @@ class SingleRegressionFloatPrecision(BaseModule):
     def predict_step(self, batch, batch_idx):
         X = batch["seq"]
         true_idx = batch["true_idx"]
-        Y_hat = self(X)
+        if (
+            "is_ref" in batch
+        ):  # this is the ISM data, so run forward pass without haplotype averaging
+            Y_hat = self(X, no_haplotype=True)
+            assert Y_hat.shape[0] == X.shape[0]
+        else:
+            Y_hat = self(X)
         if "z" in batch:
             Y = batch["z"]
             return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat, "true_idx": true_idx}
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
 
 
 class SingleRegressionOnCountsFloatPrecision(BaseModule):
@@ -1625,6 +1715,7 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         X,
         return_base_predictions: bool = False,
         base_predictions_head: str = None,
+        no_haplotype: bool = False,
     ):
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
@@ -1646,8 +1737,11 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             X = X[:, self.center_start : self.center_end, :]
             X = self.attention_pool(X)  # (S * H, enformer_hidden_dim)
             Y = self.prediction_head(X)  # (S * H, 1)
-            Y = rearrange(Y, "(S H) 1 -> S H", H=2)
-            Y = Y.mean(dim=1)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
             return Y
         else:
             Y = self.base(X, head=base_predictions_head, target_length=896)
@@ -1693,9 +1787,99 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
     def predict_step(self, batch, batch_idx):
         X, Y, Z = batch["seq"], batch["y"], batch["z"]
         true_idx = batch["true_idx"]
-        Y_hat = self(X)
+        if (
+            "is_ref" in batch
+        ):  # this is the ISM data, so run forward pass without haplotype averaging
+            Y_hat = self(X, no_haplotype=True)
+            assert Y_hat.shape[0] == X.shape[0]
+        else:
+            Y_hat = self(X)
         if "y" in batch:
             Y = batch["y"]
             return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
         else:
-            return {"Y_hat": Y_hat, "true_idx": true_idx}
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
+
+
+class BaselineEnformer(BaseModule):
+    def __init__(
+        self,
+        n_total_bins: int,
+        sum_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+        output_head_name="human",
+        output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
+    ):
+        super().__init__(
+            # dummy values for training hyperparameters since we are only doing inference using this model
+            lr=0.0,
+            weight_decay=0.0,
+            use_scheduler=False,
+            warmup_steps=0,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
+
+        self.output_head_name = output_head_name
+        self.output_head_ind = output_head_ind
+        self.center_start = (n_total_bins - sum_center_n_bins) // 2
+        self.center_end = self.center_start + sum_center_n_bins
+
+    def forward(
+        self,
+        X,
+        no_haplotype: bool = False,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if X.shape[-1] != 4:
+            X = seq_indices_to_one_hot(X)
+        if len(X.shape) == 4:
+            X = rearrange(X, "S H L NC -> (S H) L NC")
+        X = self.base(
+            X,
+            head=self.output_head_name,
+            target_length=self.hparams.n_total_bins,
+        )
+        assert X.shape[1] == self.hparams.n_total_bins
+
+        X = X[:, :, self.output_head_ind]
+        X = X[:, self.center_start : self.center_end]
+        X = X.sum(dim=1)
+        if not no_haplotype:
+            Y = rearrange(X, "(S H) -> S H", H=2)  # (S, H)
+            Y = Y.mean(dim=1)  # (S)
+        else:
+            Y = X
+        return Y
+
+    def predict_step(self, batch, batch_idx):
+        assert (
+            "seq" in batch
+        ), "BaselineEnformer is only for inference and requires 'seq' in the batch"
+        X = batch["seq"]
+        true_idx = batch["true_idx"]
+        if (
+            "is_ref" in batch
+        ):  # this is the ISM data, so run forward pass without haplotype averaging
+            Y_hat = self(X, no_haplotype=True)
+            assert Y_hat.shape[0] == X.shape[0]
+        else:
+            Y_hat = self(X)
+        if "Y" in batch:
+            Y = batch["Y"].float()
+            return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
+        else:
+            result = {}
+            result["Y_hat"] = Y_hat
+            for key in batch:
+                if key != "seq":
+                    result[key] = batch[key]
+            return result
