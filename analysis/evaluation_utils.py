@@ -16,7 +16,7 @@ def load_finetuned_model_predictions(npz_path: str) -> pd.DataFrame:
     gene_to_idx = {g: i for i, g in enumerate(unique_genes)}
     sample_to_idx = {s: i for i, s in enumerate(unique_samples)}
 
-    mtx = np.full((len(genes), len(samples)), np.nan)
+    mtx = np.full((len(unique_genes), len(unique_samples)), np.nan)
     for gene, sample, pred in zip(genes, samples, preds):
         mtx[gene_to_idx[gene], sample_to_idx[sample]] = pred
     return pd.DataFrame(mtx, index=unique_genes, columns=unique_samples)
