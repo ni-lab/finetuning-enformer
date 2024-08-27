@@ -1297,7 +1297,6 @@ class PairwiseRegressionMalinoisMPRADataset(torch.utils.data.Dataset):
             if coin_flip:
                 ref_seq = np.flip(ref_seq, axis=0)
                 alt_seq = np.flip(alt_seq, axis=0)
-                variant_effect = np.flip(variant_effect, axis=0)
 
                 # order of bases is ACGT, so reverse-complement is just flipping the sequence
                 ref_seq = np.flip(ref_seq, axis=-1)
