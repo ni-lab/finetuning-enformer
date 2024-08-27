@@ -1883,3 +1883,280 @@ class BaselineEnformer(BaseModule):
                 if key != "seq":
                     result[key] = batch[key]
             return result
+
+
+class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
+    def __init__(
+        self,
+        lr: float,
+        weight_decay: float,
+        use_scheduler: bool,
+        warmup_steps: int,
+        n_total_bins: int,
+        n_total_bins_malinois: int,
+        malinois_num_cells: int,
+        avg_center_n_bins: int = 10,
+        checkpoint=None,
+        state_dict_subset_prefix=None,
+    ):
+        super().__init__(
+            lr=lr,
+            weight_decay=weight_decay,
+            use_scheduler=use_scheduler,
+            warmup_steps=warmup_steps,
+            checkpoint=checkpoint,
+            state_dict_subset_prefix=state_dict_subset_prefix,
+        )
+
+        # output head for personalized gene expression prediction
+        enformer_hidden_dim = 2 * self.base.dim
+        self.n_total_bins = n_total_bins
+        self.attention_pool = AttentionPool(enformer_hidden_dim)
+        self.prediction_head = nn.Linear(enformer_hidden_dim, 1)
+        self.mse_loss = nn.MSELoss()
+
+        self.center_start = (n_total_bins - avg_center_n_bins) // 2
+        self.center_end = self.center_start + avg_center_n_bins
+
+        # output head for Malinois MPRA data
+        self.n_total_bins_malinois = n_total_bins_malinois
+        self.malinois_num_cells = malinois_num_cells
+        self.malinois_output_head = nn.Linear(
+            enformer_hidden_dim * n_total_bins_malinois, malinois_num_cells
+        )
+        self.malinois_mse_loss = nn.MSELoss()
+
+    def forward(
+        self,
+        X,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
+        no_haplotype: bool = False,
+        use_malinois_output_head: bool = False,
+    ):
+        """
+        X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
+        """
+        if use_malinois_output_head:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            X = self.base(
+                X,
+                return_only_embeddings=True,
+                target_length=self.hparams.n_total_bins_malinois,
+            )
+            assert X.shape[1] == self.hparams.n_total_bins_malinois
+            X = X.flatten(start_dim=1)
+            Y = self.malinois_output_head(
+                X
+            )  # (S * H, malinois_num_cells) or (S, malinois_num_cells)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) CE -> S H CE", H=2)
+                Y = Y.mean(dim=1)
+            return Y
+        elif not return_base_predictions:
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)
+            if len(X.shape) == 4:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            X = self.base(
+                X,
+                return_only_embeddings=True,
+                target_length=self.hparams.n_total_bins,
+            )
+            assert X.shape[1] == self.hparams.n_total_bins
+            X = X[:, self.center_start : self.center_end, :]
+            X = self.attention_pool(X)
+            Y = self.prediction_head(X)
+            if not no_haplotype:
+                Y = rearrange(Y, "(S H) 1 -> S H", H=2)
+                Y = Y.mean(dim=1)
+            else:
+                Y = Y.squeeze()
+            return Y
+        else:
+            Y = self.base(X, head=base_predictions_head, target_length=896)
+
+        return Y
+
+    def training_step(self, batch, batch_idx):
+        total_loss = 0.0
+
+        for i, dl_batch in enumerate(batch):
+            loss = 0.0
+
+            if i == 0:  # this is the pairwise data
+                X1, X2, Y = (
+                    dl_batch["seq1"],
+                    dl_batch["seq2"],
+                    dl_batch["z_diff"].float(),
+                )
+                X = torch.cat([X1, X2], dim=0)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)  # (S * H, L, 4)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
+                Y_hat = self(X)
+                Y1_hat = Y_hat[: X1.shape[0]]
+                Y2_hat = Y_hat[X1.shape[0] :]
+                Y_diff = Y1_hat - Y2_hat
+                loss = self.mse_loss(Y_diff, Y)
+                self.log("train/pairwise_regression_loss", loss)
+                total_loss += loss
+
+            elif i == 1:  # this is the Malinois MPRA data
+                X_ref, X_alt, Y, mask = (
+                    dl_batch["ref_seq"],
+                    dl_batch["alt_seq"],
+                    dl_batch["variant_effect"].float(),
+                    dl_batch["mask"],
+                )
+                X = torch.cat([X_ref, X_alt], dim=0)
+                if X.shape[-1] != 4:
+                    X = seq_indices_to_one_hot(X)  # (S, L, 4)
+                Y_hat = self(X, no_haplotype=True, use_malinois_output_head=True)
+                Y_ref_hat = Y_hat[: X_ref.shape[0]]
+                Y_alt_hat = Y_hat[X_ref.shape[0] :]
+                Y_diff = Y_ref_hat - Y_alt_hat
+                loss = self.malinois_mse_loss(Y_diff[mask], Y[mask])
+                self.log("train/malinois_pairwise_regression_loss", loss)
+                total_loss += loss
+
+            else:
+                raise ValueError(f"Invalid number of dataloaders: {i+1}")
+
+            total_loss += loss
+
+        self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+        if self.hparams.weight_decay is not None:
+            self.log(
+                "train/weight_decay",
+                self.trainer.optimizers[0].param_groups[0]["weight_decay"],
+            )
+        self.log("train/total_loss", total_loss)
+        return total_loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:  # this is the pairwise data
+            X1, X2, Y = (
+                batch["seq1"],
+                batch["seq2"],
+                batch["z_diff"].float(),
+            )
+            X = torch.cat([X1, X2], dim=0)
+            if X.shape[-1] != 4:
+                X = rearrange(X, "S H L -> (S H) L")
+                X = seq_indices_to_one_hot(X)
+            else:
+                X = rearrange(X, "S H L NC -> (S H) L NC")
+            Y_hat = self(X)
+            Y1_hat = Y_hat[: X1.shape[0]]
+            Y2_hat = Y_hat[X1.shape[0] :]
+            Y_diff = Y1_hat - Y2_hat
+            loss = self.mse_loss(Y_diff, Y)
+            self.log(
+                "val/pairwise_regression_loss", loss, sync_dist=True, on_epoch=True
+            )
+
+        elif dataloader_idx == 1:  # this is the Malinois MPRA data
+            X_ref, X_alt, Y, mask = (
+                batch["ref_seq"],
+                batch["alt_seq"],
+                batch["variant_effect"].float(),
+                batch["mask"],
+            )
+            X = torch.cat([X_ref, X_alt], dim=0)
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)
+            Y_hat = self(X, no_haplotype=True, use_malinois_output_head=True)
+            Y_ref_hat = Y_hat[: X_ref.shape[0]]
+            Y_alt_hat = Y_hat[X_ref.shape[0] :]
+            Y_diff = Y_ref_hat - Y_alt_hat
+            loss = self.malinois_mse_loss(Y_diff[mask], Y[mask])
+            self.log(
+                "val/malinois_pairwise_regression_loss",
+                loss,
+                sync_dist=True,
+                on_epoch=True,
+            )
+
+        else:
+            raise ValueError(f"Invalid number of dataloaders: {dataloader_idx+1}")
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        if dataloader_idx == 0:
+            if "seq1" in batch and "seq2" in batch:  # this is the pairwise data
+                X1, X2 = batch["seq1"], batch["seq2"]
+                X = torch.cat([X1, X2], dim=0)
+                if X.shape[-1] != 4:
+                    X = rearrange(X, "S H L -> (S H) L")
+                    X = seq_indices_to_one_hot(X)
+                else:
+                    X = rearrange(X, "S H L NC -> (S H) L NC")
+                Y_hat = self(X)
+                Y1_hat = Y_hat[: X1.shape[0]]
+                Y2_hat = Y_hat[X1.shape[0] :]
+                Y_diff = Y1_hat - Y2_hat
+                if "z_diff" in batch:
+                    Y = batch["z_diff"].float()
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "Y_diff": Y_diff,
+                        "Y": Y,
+                    }
+                else:
+                    return {
+                        "Y1_hat": Y1_hat,
+                        "Y2_hat": Y2_hat,
+                        "Y_diff": Y_diff,
+                    }
+            elif "seq" in batch:  # this is the individual sample data
+                X = batch["seq"]
+                true_idx = batch["true_idx"]
+                if (
+                    "is_ref" in batch
+                ):  # this is the ISM data, so run forward pass without haplotype averaging
+                    Y_hat = self(X, no_haplotype=True)
+                    assert Y_hat.shape[0] == X.shape[0]
+                else:
+                    Y_hat = self(X)
+                if "z" in batch:
+                    Y = batch["z"].float()
+                    return {"Y_hat": Y_hat, "Y": Y, "true_idx": true_idx}
+                else:
+                    result = {}
+                    result["Y_hat"] = Y_hat
+                    for key in batch:
+                        if key != "seq":
+                            result[key] = batch[key]
+                    return result
+
+        elif dataloader_idx == 1:  # this is the Malinois MPRA data
+            X_ref, X_alt = batch["ref_seq"], batch["alt_seq"]
+            X = torch.cat([X_ref, X_alt], dim=0)
+            if X.shape[-1] != 4:
+                X = seq_indices_to_one_hot(X)
+            Y_hat = self(X, no_haplotype=True, use_malinois_output_head=True)
+            Y_ref_hat = Y_hat[: X_ref.shape[0]]
+            Y_alt_hat = Y_hat[X_ref.shape[0] :]
+            Y_diff = Y_ref_hat - Y_alt_hat
+            if "variant_effect" in batch:
+                Y = batch["variant_effect"].float()
+                mask = batch["mask"]
+                return {
+                    "Y_ref_hat": Y_ref_hat,
+                    "Y_alt_hat": Y_alt_hat,
+                    "Y_diff": Y_diff,
+                    "Y": Y,
+                    "mask": mask,
+                }
+            else:
+                return {
+                    "Y_ref_hat": Y_ref_hat,
+                    "Y_alt_hat": Y_alt_hat,
+                    "Y_diff": Y_diff,
+                }

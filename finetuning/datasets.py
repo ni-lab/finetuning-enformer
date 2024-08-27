@@ -1187,7 +1187,7 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             yield {"seq": seq, "y": y}
 
 
-class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
+class PairwiseRegressionMalinoisMPRADataset(torch.utils.data.Dataset):
     def __init__(
         self,
         file_path: str,
@@ -1207,7 +1207,7 @@ class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
         self.split = split
 
         self.data = pd.read_csv(file_path)
-        self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
+        self.data = self.data[self.data["split"] == self.split].reset_index(drop=True)
 
         self.ref_sequences = self.data["ref_sequence"].values
         self.alt_sequences = self.data["alt_sequence"].values
@@ -1222,11 +1222,28 @@ class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
         assert self.variant_effects.shape[0] == len(self.ref_sequences)
 
         self.seq_idx_embedder = utils.create_seq_idx_embedder()
-        self.ref_sequences = np.array(
-            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.ref_sequences]
+        self.ref_sequences = [
+            self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.ref_sequences
+        ]
+        self.alt_sequences = [
+            self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.alt_sequences
+        ]
+        self.max_seq_len = max(
+            max([len(seq) for seq in self.ref_sequences]),
+            max([len(seq) for seq in self.alt_sequences]),
         )
-        self.alt_sequences = np.array(
-            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.alt_sequences]
+        # pad sequences to max length with Ns (index 4)
+        self.ref_sequences = np.stack(
+            [
+                np.pad(seq, ((0, self.max_seq_len - len(seq))), constant_values=4)
+                for seq in self.ref_sequences
+            ]
+        )
+        self.alt_sequences = np.stack(
+            [
+                np.pad(seq, ((0, self.max_seq_len - len(seq))), constant_values=4)
+                for seq in self.alt_sequences
+            ]
         )
         assert (
             self.ref_sequences.shape[0]
@@ -1266,8 +1283,8 @@ class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
         return len(self.ref_sequences)
 
     def __getitem__(self, idx):
-        ref_seq = self.ref_sequences[idx]
-        alt_seq = self.alt_sequences[idx]
+        ref_seq = torch.tensor(self.ref_sequences[idx])
+        alt_seq = torch.tensor(self.alt_sequences[idx])
         variant_effect = self.variant_effects[idx]
         mask = self.mask[idx]
 
@@ -1280,11 +1297,10 @@ class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
             if coin_flip:
                 ref_seq = np.flip(ref_seq, axis=0)
                 alt_seq = np.flip(alt_seq, axis=0)
-                variant_effect = np.flip(variant_effect, axis=0)
 
                 # order of bases is ACGT, so reverse-complement is just flipping the sequence
-                ref_seq = np.flip(ref_seq, axis=2)
-                alt_seq = np.flip(alt_seq, axis=2)
+                ref_seq = np.flip(ref_seq, axis=-1)
+                alt_seq = np.flip(alt_seq, axis=-1)
 
         if self.shift_max > 0:
             shift = np.random.randint(-self.shift_max, self.shift_max + 1)
