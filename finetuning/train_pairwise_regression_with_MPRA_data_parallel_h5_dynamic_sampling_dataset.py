@@ -177,7 +177,7 @@ def main():
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)
         ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
-        strategy="ddp",
+        strategy="ddp_find_unused_parameters_true",
     )
 
     model = PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(
