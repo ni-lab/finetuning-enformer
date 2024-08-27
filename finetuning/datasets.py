@@ -1207,7 +1207,7 @@ class PairwiseRegressionMalinoisMPRADataset(torch.utils.data.Dataset):
         self.split = split
 
         self.data = pd.read_csv(file_path)
-        self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
+        self.data = self.data[self.data["split"] == self.split].reset_index(drop=True)
 
         self.ref_sequences = self.data["ref_sequence"].values
         self.alt_sequences = self.data["alt_sequence"].values
