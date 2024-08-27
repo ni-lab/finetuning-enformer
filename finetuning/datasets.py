@@ -1235,17 +1235,13 @@ class PairwiseRegressionMalinoisMPRADataset(torch.utils.data.Dataset):
         # pad sequences to max length with Ns (index 4)
         self.ref_sequences = np.stack(
             [
-                np.pad(
-                    seq, ((0, self.max_seq_len - len(seq)), (0, 0)), constant_values=4
-                )
+                np.pad(seq, ((0, self.max_seq_len - len(seq))), constant_values=4)
                 for seq in self.ref_sequences
             ]
         )
         self.alt_sequences = np.stack(
             [
-                np.pad(
-                    seq, ((0, self.max_seq_len - len(seq)), (0, 0)), constant_values=4
-                )
+                np.pad(seq, ((0, self.max_seq_len - len(seq))), constant_values=4)
                 for seq in self.alt_sequences
             ]
         )
