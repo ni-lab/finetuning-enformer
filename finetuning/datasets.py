@@ -1187,6 +1187,131 @@ class EnformerDataset(torch.utils.data.IterableDataset):
             yield {"seq": seq, "y": y}
 
 
+class PairwiseMalinoisMPRADataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        file_path: str,
+        split: str,
+        reverse_complement: bool = False,
+        shift_max: int = 0,
+    ):
+        super().__init__()
+
+        assert split in [
+            "train",
+            "val",
+            "test",
+        ], "split must be one of train, val, test"
+
+        self.file_path = file_path
+        self.split = split
+
+        self.data = pd.read_csv(file_path)
+        self.data = self.data[self.data[f"is_{split}"]].reset_index(drop=True)
+
+        self.ref_sequences = self.data["ref_sequence"].values
+        self.alt_sequences = self.data["alt_sequence"].values
+        self.cell_types = []
+        self.variant_effects = []
+        for col in self.data.columns:
+            if "_normalized_variant_effect" in col:
+                self.cell_types.append(col.split("_")[0])
+                self.variant_effects.append(self.data[col].values)
+        self.variant_effects = np.stack(self.variant_effects, axis=1)
+        assert self.variant_effects.shape[1] == len(self.cell_types)
+        assert self.variant_effects.shape[0] == len(self.ref_sequences)
+
+        self.seq_idx_embedder = utils.create_seq_idx_embedder()
+        self.ref_sequences = np.array(
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.ref_sequences]
+        )
+        self.alt_sequences = np.array(
+            [self.seq_idx_embedder[[ord(s) for s in seq]] for seq in self.alt_sequences]
+        )
+        assert (
+            self.ref_sequences.shape[0]
+            == self.alt_sequences.shape[0]
+            == self.variant_effects.shape[0]
+        )
+        assert self.ref_sequences.shape[1] == self.alt_sequences.shape[1] == 200
+
+        self.mask = ~np.isnan(self.variant_effects)
+        assert self.mask.shape[0] == self.variant_effects.shape[0]
+        assert self.mask.shape[1] == self.variant_effects.shape[1]
+
+        self.reverse_complement = reverse_complement
+        self.shift_max = shift_max
+        if self.split == "val" or self.split == "test":
+            if self.reverse_complement or self.shift_max > 0:
+                raise ValueError(
+                    "reverse_complement must be False and shift_max must be 0 for val and test splits"
+                )
+        else:
+            if not (self.reverse_complement or self.shift_max > 0):
+                print(
+                    "WARNING: reverse_complement and shift_max are both False for train split. Setting these to True can improve model performance."
+                )
+
+    def get_num_cells(self):
+        return self.variant_effects.shape[1]
+
+    def get_cell_names(self):
+        return self.cell_types
+
+    def get_total_n_bins(self):
+        seqlen = len(self.ref_sequences[0])
+        return int(np.ceil(seqlen / 128))
+
+    def __len__(self):
+        return len(self.ref_sequences)
+
+    def __getitem__(self, idx):
+        ref_seq = self.ref_sequences[idx]
+        alt_seq = self.alt_sequences[idx]
+        variant_effect = self.variant_effects[idx]
+        mask = self.mask[idx]
+
+        # one-hot encode the sequences
+        ref_seq = seq_indices_to_one_hot(ref_seq).detach().numpy()
+        alt_seq = seq_indices_to_one_hot(alt_seq).detach().numpy()
+
+        if self.reverse_complement:
+            coin_flip = np.random.choice([True, False])
+            if coin_flip:
+                ref_seq = np.flip(ref_seq, axis=0)
+                alt_seq = np.flip(alt_seq, axis=0)
+                variant_effect = np.flip(variant_effect, axis=0)
+
+                # order of bases is ACGT, so reverse-complement is just flipping the sequence
+                ref_seq = np.flip(ref_seq, axis=2)
+                alt_seq = np.flip(alt_seq, axis=2)
+
+        if self.shift_max > 0:
+            shift = np.random.randint(-self.shift_max, self.shift_max + 1)
+            ref_seq = np.roll(ref_seq, shift, axis=0)
+            alt_seq = np.roll(alt_seq, shift, axis=0)
+
+            # zero out the shifted positions
+            if shift > 0:
+                ref_seq[:shift] = 0
+                alt_seq[:shift] = 0
+            elif shift < 0:
+                ref_seq[shift:] = 0
+                alt_seq[shift:] = 0
+
+        ref_seq = torch.tensor(ref_seq.copy()).float()
+        alt_seq = torch.tensor(alt_seq.copy()).float()
+        variant_effect = torch.tensor(variant_effect.copy()).float()
+        mask = torch.tensor(mask.copy()).bool()
+
+        return {
+            "ref_seq": ref_seq,
+            "alt_seq": alt_seq,
+            "variant_effect": variant_effect,
+            "mask": mask,
+        }
+
+
 class ISMDataset(torch.utils.data.Dataset):
     """
     Takes in the gene info and reference genome, and generates every possible single nucleotide variant for each gene
