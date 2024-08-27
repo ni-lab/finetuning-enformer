@@ -1948,7 +1948,7 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
                 target_length=self.hparams.n_total_bins_malinois,
             )
             assert X.shape[1] == self.hparams.n_total_bins_malinois
-            X = X.view(X.shape[0], -1)
+            X = X.flatten(start_dim=1)
             Y = self.malinois_output_head(
                 X
             )  # (S * H, malinois_num_cells) or (S, malinois_num_cells)
