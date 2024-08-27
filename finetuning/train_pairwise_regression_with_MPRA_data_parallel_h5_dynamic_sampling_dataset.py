@@ -97,7 +97,7 @@ def main():
                 malinois_MPRA_train_ds, batch_size=args.batch_size, shuffle=True
             ),
         ],
-        mode="max_size_cycle",
+        mode="min_size",
     )
 
     val_dl = [
@@ -155,7 +155,7 @@ def main():
     # max_steps = (args.max_epochs * (max(len(pairwise_train_ds), len(malinois_MPRA_train_ds)) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
     # simplified formula below
     max_steps = args.max_epochs * (
-        max(len(pairwise_train_ds), len(malinois_MPRA_train_ds)) // 64
+        min(len(pairwise_train_ds), len(malinois_MPRA_train_ds)) // 64
     )
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
