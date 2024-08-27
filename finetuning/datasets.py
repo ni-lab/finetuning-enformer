@@ -1283,8 +1283,8 @@ class PairwiseRegressionMalinoisMPRADataset(torch.utils.data.Dataset):
         return len(self.ref_sequences)
 
     def __getitem__(self, idx):
-        ref_seq = self.ref_sequences[idx]
-        alt_seq = self.alt_sequences[idx]
+        ref_seq = torch.tensor(self.ref_sequences[idx])
+        alt_seq = torch.tensor(self.alt_sequences[idx])
         variant_effect = self.variant_effects[idx]
         mask = self.mask[idx]
 
