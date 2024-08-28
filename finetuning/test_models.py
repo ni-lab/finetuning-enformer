@@ -52,6 +52,7 @@ def parse_args():
             "joint_regression",
             "classification",
             "joint_classification",
+            "joint_regression_with_Malinois_MPRA",
         ],
     )
     parser.add_argument("checkpoints_dir", type=str, default=None)
