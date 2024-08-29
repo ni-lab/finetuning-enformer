@@ -11,6 +11,7 @@ from models import (
     PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseRegressionFloatPrecision,
+    PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
 from tqdm import tqdm
@@ -51,6 +52,7 @@ def parse_args():
             "joint_regression",
             "classification",
             "joint_classification",
+            "joint_regression_with_Malinois_MPRA",
         ],
     )
     parser.add_argument("checkpoints_dir", type=str, default=None)
@@ -301,6 +303,19 @@ def main():
             )
             print(
                 "Predicting using PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision"
+            )
+        elif args.model_type == "joint_regression_with_Malinois_MPRA":
+            model = PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(
+                lr=0,
+                weight_decay=0,
+                use_scheduler=False,
+                warmup_steps=0,
+                n_total_bins=test_ds.get_total_n_bins(),
+                n_total_bins_malinois=2,
+                malinois_num_cells=5,
+            )
+            print(
+                "Predicting using PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision"
             )
         else:
             raise ValueError("Invalid model type. Please provide a valid model type.")
