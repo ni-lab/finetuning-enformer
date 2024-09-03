@@ -114,7 +114,14 @@ def get_sample_ancestries(metadata_path: str) -> dict[str, str]:
     return df["Characteristics[ancestry category]"].to_dict()
 
 
-def collate_gene_data(args, gene):
+def collate_gene_data(
+    gene: str,
+    tmp_dir: str,
+    counts_path: str,
+    metadata_path: str,
+    consensus_seq_dir: str,
+    context_length: int,
+):
     """
     Write the following to an h5 file:
         genes: (n_samples,)
@@ -125,18 +132,18 @@ def collate_gene_data(args, gene):
         Z: (n_samples,) z-scored counts
         P: (n_samples,) percentile of counts
     """
-    output_path = os.path.join(args.output_dir, "tmp", f"{gene}.h5")
+    output_path = os.path.join(tmp_dir, f"{gene}.h5")
     if os.path.exists(output_path):
         return
 
-    counts_df = pd.read_csv(args.counts_path, index_col="our_gene_name")
-    sample_to_ancestry_map = get_sample_ancestries(args.metadata_path)
+    counts_df = pd.read_csv(counts_path, index_col="our_gene_name")
+    sample_to_ancestry_map = get_sample_ancestries(metadata_path)
 
     samples_with_counts = set(
         c for c in counts_df.columns if c.startswith("HG") or c.startswith("NA")
     )
 
-    gene_seq_dir = os.path.join(args.consensus_seq_dir, gene)
+    gene_seq_dir = os.path.join(consensus_seq_dir, gene)
     samples_with_seq = set(
         f.split(".")[0] for f in os.listdir(gene_seq_dir) if f != "ref.fa"
     )
@@ -153,8 +160,8 @@ def collate_gene_data(args, gene):
     for sample in samples:
         h1_fasta_path = os.path.join(gene_seq_dir, f"{sample}.1pIu.fa")
         h2_fasta_path = os.path.join(gene_seq_dir, f"{sample}.2pIu.fa")
-        h1_seq = get_seq_from_fasta(h1_fasta_path, args.context_length)
-        h2_seq = get_seq_from_fasta(h2_fasta_path, args.context_length)
+        h1_seq = get_seq_from_fasta(h1_fasta_path, context_length)
+        h2_seq = get_seq_from_fasta(h2_fasta_path, context_length)
         seqs.append(np.stack([h1_seq, h2_seq], axis=0))
     seqs = np.asarray(seqs)
 
@@ -204,7 +211,15 @@ def main():
     publish_gene_class_csv(args.output_dir, gene_to_class)
 
     Parallel(n_jobs=args.n_jobs, verbose=10)(
-        delayed(collate_gene_data)(args, gene) for gene in genes
+        delayed(collate_gene_data)(
+            gene,
+            tmp_dir,
+            args.counts_path,
+            args.metadata_path,
+            args.consensus_seq_dir,
+            args.context_length,
+        )
+        for gene in genes
     )
 
     train_f = h5py.File(os.path.join(args.output_dir, "train.h5"), "w")
