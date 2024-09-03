@@ -6,7 +6,7 @@ GEMMA="/data/yosef3/scratch/ruchir/tools/gemma/gemma-0.98.5-linux-static-AMD64"
 
 # ROWS IN THE MATRIX TO ANALYZE (FOR BATCHED RUNS)
 BATCH_START=1
-BATCH_END=2
+BATCH_END=400
 
 # CONSTANTS
 CONTEXT_SIZE=49152
@@ -17,15 +17,24 @@ GEXP="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz"
 TRAIN_H5="../finetuning/data/h5_bins_384_chrom_split/train.h5"
 TEST_H5="../finetuning/data/h5_bins_384_chrom_split/test.h5"
 GENOTYPES="/data/yosef3/scratch/ruchir/data/geuvadis/genotypes/plink"
+
+HSQ_DIR="./hsq"
+TMP_DIR="./tmp"
 OUT_DIR="./WEIGHTS"
 
 
 # --- BEGIN SCRIPT:
 NR="${BATCH_START}_${BATCH_END}"
 
-mkdir -p hsq
-mkdir -p tmp/$NR
+mkdir -p ${HSQ_DIR}
+mkdir -p ${TMP_DIR}
 mkdir -p ${OUT_DIR}
+
+# Add symbolic link from output to the current directory in order to run BLUP and BSLMM
+if [ -L output ]; then
+	rm output
+fi
+ln -s ./ output
 
 # Create metadata file (one for entire batch) and phenotype files (one for each gene)
 source ~/.bashrc
@@ -34,8 +43,8 @@ python create_metadata_and_pheno_files.py \
 	--counts $GEXP \
 	--train_h5 $TRAIN_H5 \
 	--test_h5 $TEST_H5 \
-	--outdir "tmp/$NR" \
-	--batch_start $BATCH_START \
+	--outdir "$TMP_DIR/$NR" \
+	--batch_start $((BATCH_START - 1)) \
 	--batch_end $BATCH_END
 
 
@@ -43,39 +52,41 @@ python create_metadata_and_pheno_files.py \
 conda activate r-env
 half_context_size=$((CONTEXT_SIZE / 2))
 
-cat "tmp/${NR}/gene_metadata.tsv" | awk 'NR>1' | while read PARAM; do
+cat "${TMP_DIR}/${NR}/gene_metadata.tsv" | awk 'NR>1' | while read PARAM; do
 	GNAME=`echo $PARAM | awk '{ print $1 }'`
 	CHR=`echo $PARAM | awk '{ print $2 }'`
 	TSS=`echo $PARAM | awk '{ print $3 }'`
 	P0=$((TSS - half_context_size))
-	P1=$((TSS + half_context_size))
+	P1=$((TSS + half_context_size - 1))
 
 	echo "Processing gene ${GNAME} on chromosome ${CHR} from ${P0} to ${P1}"
 
 	# Get the locus genotypes for all samples and set current gene expression as the phenotype
 	${PLINK} \
 		--bfile "${GENOTYPES}/GEUVADIS.chr${CHR}.PH1PH2_465.IMPFRQFILT_BIALLELIC_PH.annotv2.genotypes" \
-		--pheno "tmp/${NR}/${GNAME}.train.pheno" \
+		--pheno "${TMP_DIR}/${NR}/${GNAME}.train.pheno" \
 		--make-bed \
-		--out "tmp/${NR}/${GNAME}.train" \
-		--keep "tmp/${NR}/${GNAME}.train.pheno" \
+		--out "${TMP_DIR}/${NR}/${GNAME}.train" \
+		--keep "${TMP_DIR}/${NR}/${GNAME}.train.pheno" \
 		--chr ${CHR} \
 		--from-bp ${P0} \
 		--to-bp ${P1} \
 		--maf ${MAF} \
-		--allow-no-sex
+		--allow-no-sex \
+		--snps-only \
+		--keep-allele-order
 
 	# Run FUSION.compute_weights.R
 	Rscript /data/yosef3/scratch/ruchir/repos/fusion_twas/FUSION.compute_weights.R \
-		--bfile "tmp/${NR}/${GNAME}.train" \
-		--tmp "tmp/${NR}/${GNAME}.tmp" \
+		--bfile "${TMP_DIR}/${NR}/${GNAME}.train" \
+		--tmp "${TMP_DIR}/${NR}/${GNAME}.tmp" \
 		--out "${OUT_DIR}/${GNAME}" \
 		--verbose 1 \
 		--save_hsq \
 		--PATH_plink ${PLINK} \
 		--PATH_gcta ${GCTA} \
 		--PATH_gemma ${GEMMA} \
-		--models lasso,top1,enet
+		--models lasso,top1,enet,blup
 
 	# Save weights
 	Rscript save_weights.R \
@@ -83,5 +94,5 @@ cat "tmp/${NR}/gene_metadata.tsv" | awk 'NR>1' | while read PARAM; do
 		--out_prefix "${OUT_DIR}/${GNAME}"
 
 	# Append heritability output to hsq file
-	cat "${OUT_DIR}/${GNAME}.hsq" >> "hsq/${NR}.hsq"
+	cat "${OUT_DIR}/${GNAME}.hsq" >> "${HSQ_DIR}/${NR}.hsq"
 done
