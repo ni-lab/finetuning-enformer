@@ -46,6 +46,7 @@ def parse_args():
         "model_type",
         type=str,
         choices=[
+            "baseline",
             "single_regression",
             "single_regression_counts",
             "regression",
@@ -236,96 +237,112 @@ def main():
             callbacks=[pred_writer],
         )
 
-        # find the best checkpoint and verify that the training is complete
-        task = "regression" if "regression" in args.model_type else "classification"
-        best_ckpt_path = find_best_checkpoint_and_verify_that_training_is_complete(
-            args.checkpoints_dir,
-            task,
-            args.patience,
-            args.proceed_even_if_training_incomplete,
-            args.create_best_ckpt_copy,
-        )
+        if args.model_type == "baseline":
+            model = BaselineEnformer(
+                n_total_bins=(args.seqlen // 128),
+            )
+            print("Predicting using BaselineEnformer")
 
-        if args.model_type == "single_regression":
-            model = SingleRegressionFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print("Predicting using SingleRegressionFloatPrecision")
-        elif args.model_type == "single_regression_counts":
-            model = SingleRegressionOnCountsFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print("Predicting using SingleRegressionOnCountsFloatPrecision")
-        elif args.model_type == "regression":
-            model = PairwiseRegressionFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print("Predicting using PairwiseRegressionFloatPrecision")
-        elif args.model_type == "joint_regression":
-            model = PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print(
-                "Predicting using PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision"
-            )
-        elif args.model_type == "classification":
-            model = PairwiseClassificationFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print("Predicting using PairwiseClassificationFloatPrecision")
-        elif args.model_type == "joint_classification":
-            model = PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-            )
-            print(
-                "Predicting using PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision"
-            )
-        elif args.model_type == "joint_regression_with_Malinois_MPRA":
-            model = PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(
-                lr=0,
-                weight_decay=0,
-                use_scheduler=False,
-                warmup_steps=0,
-                n_total_bins=test_ds.get_total_n_bins(),
-                n_total_bins_malinois=2,
-                malinois_num_cells=5,
-            )
-            print(
-                "Predicting using PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision"
+            trainer.predict(
+                model,
+                test_dl,
+                return_predictions=False,
             )
         else:
-            raise ValueError("Invalid model type. Please provide a valid model type.")
+            # find the best checkpoint and verify that the training is complete
+            task = "regression" if "regression" in args.model_type else "classification"
+            best_ckpt_path = find_best_checkpoint_and_verify_that_training_is_complete(
+                args.checkpoints_dir,
+                task,
+                args.patience,
+                args.proceed_even_if_training_incomplete,
+                args.create_best_ckpt_copy,
+            )
 
-        trainer.predict(
-            model,
-            test_dl,
-            ckpt_path=best_ckpt_path,
-            return_predictions=False,
-        )
+            if args.model_type == "single_regression":
+                model = SingleRegressionFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print("Predicting using SingleRegressionFloatPrecision")
+            elif args.model_type == "single_regression_counts":
+                model = SingleRegressionOnCountsFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print("Predicting using SingleRegressionOnCountsFloatPrecision")
+            elif args.model_type == "regression":
+                model = PairwiseRegressionFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print("Predicting using PairwiseRegressionFloatPrecision")
+            elif args.model_type == "joint_regression":
+                model = PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print(
+                    "Predicting using PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision"
+                )
+            elif args.model_type == "classification":
+                model = PairwiseClassificationFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print("Predicting using PairwiseClassificationFloatPrecision")
+            elif args.model_type == "joint_classification":
+                model = (
+                    PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(
+                        lr=0,
+                        weight_decay=0,
+                        use_scheduler=False,
+                        warmup_steps=0,
+                        n_total_bins=(args.seqlen // 128),
+                    )
+                )
+                print(
+                    "Predicting using PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision"
+                )
+            elif args.model_type == "joint_regression_with_Malinois_MPRA":
+                model = PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=test_ds.get_total_n_bins(),
+                    n_total_bins_malinois=2,
+                    malinois_num_cells=5,
+                )
+                print(
+                    "Predicting using PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision"
+                )
+            else:
+                raise ValueError(
+                    "Invalid model type. Please provide a valid model type."
+                )
+
+            trainer.predict(
+                model,
+                test_dl,
+                ckpt_path=best_ckpt_path,
+                return_predictions=False,
+            )
         print("Done predicting.")
 
     # read predictions from the files and concatenate them
