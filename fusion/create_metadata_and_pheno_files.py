@@ -15,6 +15,8 @@ def parse_args():
     parser.add_argument("--outdir", type=str)
     parser.add_argument("--batch_start", type=int, default=0)
     parser.add_argument("--batch_end", type=int, default=None)
+    parser.add_argument("--train_subset_pct", type=float, default=100)
+    parser.add_argument("--random_seed", type=int, default=42)
     return parser.parse_args()
 
 
@@ -57,14 +59,23 @@ def main():
     meta_df = counts_df[["Chr", "Coord"]]
     meta_df.to_csv(os.path.join(args.outdir, "gene_metadata.tsv"), index=True, sep="\t")
 
-    # Create phenotype files (one train per gene)
+    rng = np.random.default_rng(seed=args.random_seed)
+
+    # Create phenotype files
     for gene in my_genes:
+        # Subsample train samples if necessary
+        train_samples = list(gene_to_train_samples[gene])
+        if args.train_subset_pct < 100:
+            n_to_keep = int(len(train_samples) * args.train_subset_pct / 100)
+            train_samples = rng.choice(train_samples, n_to_keep, replace=False)
+
         create_pheno_file(
             counts_df,
             gene,
-            gene_to_train_samples[gene],
+            train_samples,
             os.path.join(args.outdir, f"{gene}.train.pheno"),
         )
+
         create_pheno_file(
             counts_df,
             gene,

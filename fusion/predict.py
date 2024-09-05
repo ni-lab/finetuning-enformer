@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("--temp_dir", type=str, required=True, help="Directory containing train/test pheno files.")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save predictions for each model.")
     parser.add_argument("--counts_path", type=str, default="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
-    parser.add_argument("--models", nargs="+", type=str, default=["top1", "lasso", "enet", "blup"])
+    parser.add_argument("--models", nargs="+", type=str, default=["top1", "lasso", "enet", "blup", "bslmm"])
     return parser.parse_args()
 # fmt: on
 
@@ -154,10 +154,14 @@ def make_predictions(
         assert set(dosage_mtx.index) == set(weights_df.index)
     else:
         assert set(weights_df.index).issubset(set(dosage_mtx.index))
-        dosage_mtx = dosage_mtx.loc[weights_df.index]
+
+    weights_df["weight"] = pd.to_numeric(weights_df["weight"], errors="coerce")
+    weights_df = weights_df.dropna(subset=["weight"])
+    dosage_mtx = dosage_mtx.loc[weights_df.index]
 
     dosages = dosage_mtx.values.T  # [sample, variant]
     weights = weights_df["weight"].values
+
     return dosages @ weights + intercept
 
 
@@ -196,15 +200,25 @@ def main():
 
         for model in args.models:
             weights_path = os.path.join(args.weight_dir, f"{gene}.{model}.weights.txt")
+            if not os.path.exists(weights_path):
+                print(f"WARNING: No weights found for {gene=} ({model=}). Skipping...")
+                model_preds[model].loc[gene, test_samples] = np.mean(train_Y)
+                continue
+
             weights = load_weights(weights_path)
             if weights.shape[0] == 0:
                 print(f"WARNING: No weights found for {gene=} ({model=}). Skipping...")
                 model_preds[model].loc[gene, test_samples] = np.mean(train_Y)
                 continue
 
-            test_Y_hat = make_predictions(
-                test_dosages, weights, np.mean(train_Y), model
-            )
+            try:
+                test_Y_hat = make_predictions(
+                    test_dosages, weights, np.mean(train_Y), model
+                )
+            except Exception as e:
+                print(f"ERROR: {gene=} ({model=}) {e}")
+                raise e
+
             model_preds[model].loc[gene, test_samples] = test_Y_hat
 
     # Save performance metrics

@@ -27,7 +27,7 @@ OUT_DIR="./WEIGHTS"
 NR="${BATCH_START}_${BATCH_END}"
 
 mkdir -p ${HSQ_DIR}
-mkdir -p ${TMP_DIR}
+mkdir -p ${TMP_DIR}/${NR}
 mkdir -p ${OUT_DIR}
 
 # Add symbolic link from output to the current directory in order to run BLUP and BSLMM
@@ -86,7 +86,8 @@ cat "${TMP_DIR}/${NR}/gene_metadata.tsv" | awk 'NR>1' | while read PARAM; do
 		--PATH_plink ${PLINK} \
 		--PATH_gcta ${GCTA} \
 		--PATH_gemma ${GEMMA} \
-		--models lasso,top1,enet,blup
+		--crossval 0
+		--models lasso,top1,enet,blup,bslmm
 
 	# Save weights
 	Rscript save_weights.R \
