@@ -93,7 +93,7 @@ def load_train_and_test_dosages(
         )
 
     # Filter on AAF
-    variants_f = train_aaf[(train_aaf > 0.05) & (train_aaf < 0.95)].index
+    variants_f = train_aaf[(train_aaf >= 0.05) & (train_aaf <= 0.95)].index
     train_genotype_mtx = genotype_mtx.loc[variants_f, train_samples]
     test_genotype_mtx = genotype_mtx.loc[variants_f, test_samples]
 
@@ -211,13 +211,9 @@ def main():
                 model_preds[model].loc[gene, test_samples] = np.mean(train_Y)
                 continue
 
-            try:
-                test_Y_hat = make_predictions(
-                    test_dosages, weights, np.mean(train_Y), model
-                )
-            except Exception as e:
-                print(f"ERROR: {gene=} ({model=}) {e}")
-                raise e
+            test_Y_hat = make_predictions(
+                test_dosages, weights, np.mean(train_Y), model
+            )
 
             model_preds[model].loc[gene, test_samples] = test_Y_hat
 

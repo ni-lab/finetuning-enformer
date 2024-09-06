@@ -1,4 +1,6 @@
 WEIGHTS/
+WEIGHTS_scaling/
 hsq/
 tmp/
+tmp_scaling/
 output
