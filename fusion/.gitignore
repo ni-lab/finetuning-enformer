@@ -4,3 +4,4 @@ hsq/
 tmp/
 tmp_scaling/
 output
+predict_scaling_all.sh
