@@ -1,33 +1,43 @@
+import warnings
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 from genomic_utils.variant import Variant
-from scipy.stats import linregress, pearsonr
+from scipy.stats import ConstantInputWarning, linregress, pearsonr
 from sklearn.preprocessing import StandardScaler
+
+warnings.filterwarnings("ignore", category=ConstantInputWarning)
 
 
 def compute_drivers(
     dosages_df: pd.DataFrame,
-    weights_df: pd.DataFrame,
+    weights: pd.Series,
     test_samples: list[str],
     test_y_pred: np.ndarray,
-    standardize_dosages: bool = True,
+    standardize_dosages: bool = False,
     train_samples: Optional[list[str]] = None,
+    check_linear_pred_equals_test_y_pred: bool = True,
 ) -> list[Variant]:
     """Computes driver variants that significantly contribute to model predictions on the test set
     using a forward selection algorithm.
 
     Note that test_y_preds does not have to equal dosages @  weights for this function to work.
-    weights_df should hold the betas for linear models or ISMs for deep learning models.
+    weights should hold the betas for linear models or ISMs for deep learning models.
 
     Args:
         dosages_df (pd.DataFrame): DataFrame of size [n_variants, n_samples]
-        weights_df (pd.DataFrame): DataFrame of size [n_variants,]
+        weights (pd.Series): Series of size [n_variants,]
         standardize_dosages (bool): Whether to standardize dosages
     Returns:
         list of driver variants, sorted by importance
     """
-    assert dosages_df.index.equals(weights_df.index)
+    assert dosages_df.index.equals(weights.index)
     assert len(test_samples) == test_y_pred.shape[0]
+
+    if len(weights) == 0:
+        print("No weights found. Skipping driver computation.")
+        return []
 
     # Subset dosages to test samples
     test_dosages_df = dosages_df[test_samples]
@@ -45,7 +55,12 @@ def compute_drivers(
 
     # Get X and w arrays
     X = test_dosages_df.values.T  # [n_test_samples, n_variants]
-    w = weights_df.values  # [n_variants,]
+    w = weights.values  # [n_variants,]
+
+    if check_linear_pred_equals_test_y_pred:
+        linear_preds = X @ w
+        residual = test_y_pred - linear_preds
+        assert np.allclose(residual, residual[0])
 
     # Compute drivers using the following algorithm:
     #   Sort variants by absolute value of their weight (beta/ISM)
@@ -65,21 +80,21 @@ def compute_drivers(
 
     def compute_marginal_corr(X: np.ndarray, idx: int) -> float:
         """Returns the marginal correlation and Bonferroni-corrected p-value of the variant at idx with y."""
-        rho, p = pearsonr(X[:, idx], test_y_pred)
+        rho, p = pearsonr(X[:, idx] * w[idx], test_y_pred)
         p_adj = p * X.shape[1]
         return rho, p_adj
 
     sorted_variant_idxs = np.abs(w).argsort()[::-1]
     for variant_idx in sorted_variant_idxs:
         partial_corr = _compute_partial_model_corr(X, driver_idxs + [variant_idx])
-        if partial_corr < best_partial_corr + 0.05:
+        if np.isnan(partial_corr) or (partial_corr < best_partial_corr + 0.05):
             continue
 
         marginal_corr, p_adj = compute_marginal_corr(X, variant_idx)
-        if marginal_corr < 0 or p_adj > 0.01:
+        if np.isnan(marginal_corr) or (marginal_corr < 0) or (p_adj > 0.01):
             continue
 
         driver_idxs.append(variant_idx)
         best_partial_corr = partial_corr
 
-    return weights_df.index[driver_idxs]
+    return weights.index[driver_idxs].tolist()
