@@ -3,7 +3,7 @@
 #SBATCH --job-name=finetune
 #
 # Account:
-#SBATCH --account=co_rail
+#SBATCH --account=fc_nilah
 #
 # Partition:
 #SBATCH --partition=savio4_gpu
