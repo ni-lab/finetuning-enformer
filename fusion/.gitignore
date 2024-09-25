@@ -1,7 +1,10 @@
 WEIGHTS/
 WEIGHTS_scaling/
+WEIGHTS_rare_variant_analysis
 hsq/
 tmp/
 tmp_scaling/
+tmp_rare_variant_analysis
 output
 predict_scaling_all.sh
+predict_rare_variant_analysis_all.sh

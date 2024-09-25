@@ -10,7 +10,7 @@ from genomic_utils.variant import Variant
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-sys.path.append("../predixcan_lite")
+sys.path.append("../vcf_utils")
 import utils
 
 
@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save predictions for each model.")
     parser.add_argument("--counts_path", type=str, default="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
     parser.add_argument("--models", nargs="+", type=str, default=["top1", "lasso", "enet", "blup", "bslmm"])
+    parser.add_argument("--maf", type=float, default=0.05)
     return parser.parse_args()
 # fmt: on
 
@@ -55,13 +56,14 @@ def load_train_and_test_dosages(
     gene: str,
     train_samples: list[str],
     test_samples: list[str],
+    maf: float,
     context_size: int = 128 * 384,
     scale_dosages: bool = True,
     flip_variants: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     # Load genotypes: [n_variants, n_samples]
     genotype_mtx = utils.get_genotype_matrix(
-        counts_df.loc[gene, "Chr"], counts_df.loc[gene, "Coord"], context_size
+        counts_df.loc[gene, "Chr"], counts_df.loc[gene, "Coord"], context_size, remove_ac0=False
     )
 
     # Compute alternate allele frequency (AAF)
@@ -93,7 +95,7 @@ def load_train_and_test_dosages(
         )
 
     # Filter on AAF
-    variants_f = train_aaf[(train_aaf >= 0.05) & (train_aaf <= 0.95)].index
+    variants_f = train_aaf[(train_aaf >= maf) & (train_aaf <= 1 - maf)].index
     train_genotype_mtx = genotype_mtx.loc[variants_f, train_samples]
     test_genotype_mtx = genotype_mtx.loc[variants_f, test_samples]
 
@@ -102,7 +104,7 @@ def load_train_and_test_dosages(
     test_dosage_mtx = test_genotype_mtx.applymap(utils.convert_to_dosage)
 
     # Scale dosages (i.e. scale rows/variants to have mean 0 and variance 1)
-    if scale_dosages:
+    if scale_dosages and train_dosage_mtx.shape[0] > 0:
         scaler = StandardScaler()
         train_dosage_mtx = pd.DataFrame(
             scaler.fit_transform(train_dosage_mtx.values.T).T,
@@ -135,6 +137,12 @@ def load_weights(weights_path: str) -> pd.DataFrame:
 
     df["chrom"] = df["id"].apply(lambda x: x.split("_")[1])
     df["pos"] = df["id"].apply(lambda x: int(x.split("_")[2]))
+
+    # plink2R, which is used by FUSION, uses read.table to read in the plink BIM file.
+    # This sometimes results in a T allele being read in as a TRUE value. We handle that bug here.
+    df["ref"] = df["ref"].replace({True: "T"})
+    df["alt"] = df["alt"].replace({True: "T"})
+
     df["variant"] = [
         Variant(chrom, pos, ref, alt)
         for (chrom, pos, ref, alt) in zip(df["chrom"], df["pos"], df["ref"], df["alt"])
@@ -161,7 +169,6 @@ def make_predictions(
 
     dosages = dosage_mtx.values.T  # [sample, variant]
     weights = weights_df["weight"].values
-
     return dosages @ weights + intercept
 
 
@@ -193,7 +200,7 @@ def main():
 
         # Load (scaled) test dosages
         _, test_dosages = load_train_and_test_dosages(
-            counts_df, gene, train_samples, test_samples
+            counts_df, gene, train_samples, test_samples, args.maf
         )
 
         train_Y = get_expr_from_pheno_file(train_pheno_path)
