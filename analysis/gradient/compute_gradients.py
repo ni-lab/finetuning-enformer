@@ -14,7 +14,7 @@ from enformer_pytorch import Enformer, str_to_one_hot
 from pyfaidx import Fasta
 from tqdm import tqdm
 
-sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/finetuning")
+sys.path.append("../../finetuning/")
 import models
 
 

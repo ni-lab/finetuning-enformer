@@ -6,7 +6,7 @@ import pandas as pd
 from genomic_utils.variant import Variant
 from tqdm import tqdm
 
-sys.path += ["../..", "../../../predixcan_lite"]
+sys.path += ["../..", "../../../vcf_utils"]
 import evaluation_utils
 import utils
 

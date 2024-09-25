@@ -14,12 +14,11 @@ from enformer_pytorch import Enformer, str_to_one_hot
 from pyfaidx import Fasta
 from tqdm import tqdm
 
-sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/predixcan_lite")
-import utils
-
-sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/finetuning")
-import models
 from genomic_utils.variant import Variant
+
+sys.path += ["../../finetuning", "../../vcf_utils"]
+import models
+import utils
 
 
 class Dataset(torch.utils.data.Dataset):

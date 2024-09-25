@@ -6,11 +6,10 @@ import pandas as pd
 from genomic_utils.variant import Variant
 from tqdm import tqdm
 
-sys.path.append("../..")
+sys.path += ["../..", "../../../vcf_utils"]
 import evaluation_utils
-
-sys.path.append("../../../predixcan_lite")
 import utils
+
 
 INPUT_FINEMAPPING_PATH = "/data/yosef3/scratch/ruchir/data/MAGE/MAGE.v1.0.data/QTL_results/eQTL_results/eQTL_finemapping_results/hg19/eQTL_finemapping.significantAssociations.MAGE.v1.0.txt"
 OUTPUT_PATH = (
