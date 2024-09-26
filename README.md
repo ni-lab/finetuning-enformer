@@ -22,7 +22,7 @@ We fine-tune Enformer [1] in our work. We use the PyTorch port of Enformer avail
 - `process_geuvadis_data/`: Scripts for processing personal gene expression data from the GEUVADIS consortium. The processed data used in our experiments can be found at `process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz`.
 - `process_sequence_data/`: Scripts to obtain personal genome sequences for individuals with matching gene expression data.
 - `process_enformer_data/`: Code to build Enformer training data from Basenji2 training data by expanding input sequences. This data is used for joint training along with the personal genome and transcriptome data.
-- `process_Malinois_MPRA_data/`: Code to download and format the MPRA data collected by Siraj et al. [2] from ENCODE.
+- `process_Malinois_MPRA_data/`: Code to download and format the MPRA data collected by Siraj et al. [2] from ENCODE. This data is also used for joint training.
 - `vcf_utils/`: Miscellaneous utils used for processing VCF files.
 
 ## References:
