@@ -8,13 +8,12 @@ from datasets import SampleH5Dataset
 from lightning import Trainer
 from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
-    PairwiseClassificationFloatPrecision,
+    BaselineEnformer, PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseRegressionFloatPrecision,
     PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
-    SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision, 
-    BaselineEnformer)
+    SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
 from tqdm import tqdm
 
 

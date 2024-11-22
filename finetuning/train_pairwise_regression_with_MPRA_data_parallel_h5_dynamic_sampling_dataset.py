@@ -42,7 +42,9 @@ def parse_args():
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
-    parser.add_argument("--use_random_init", action=BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--use_random_init", action=BooleanOptionalAction, default=False
+    )
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(

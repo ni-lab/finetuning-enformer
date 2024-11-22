@@ -38,7 +38,9 @@ def parse_args():
     parser.add_argument("--random_shift_max", type=int, default=3)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
-    parser.add_argument("--use_random_init", action=BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--use_random_init", action=BooleanOptionalAction, default=False
+    )
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(
