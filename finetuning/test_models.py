@@ -13,7 +13,8 @@ from models import (
     PairwiseRegressionFloatPrecision,
     PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
-    SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
+    SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision, 
+    BaselineEnformer)
 from tqdm import tqdm
 
 

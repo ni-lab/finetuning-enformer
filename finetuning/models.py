@@ -37,6 +37,7 @@ class BaseModule(L.LightningModule):
         warmup_steps: int,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -45,29 +46,35 @@ class BaseModule(L.LightningModule):
         self.use_scheduler = use_scheduler
         self.warmup_steps = warmup_steps
 
-        if checkpoint is None:
+        if use_random_init:
             self.base = BaseEnformer.from_pretrained(
                 "EleutherAI/enformer-official-rough"
             )
+            self.base.apply(self.base._init_weights)
         else:
-            checkpoint = torch.load(checkpoint)
-            new_state_dict = {}
-            if state_dict_subset_prefix is not None:
-                print(
-                    "Loading subset of state dict from checkpoint, key prefix: ",
-                    state_dict_subset_prefix,
+            if checkpoint is None:
+                self.base = BaseEnformer.from_pretrained(
+                    "EleutherAI/enformer-official-rough"
                 )
-                for key in checkpoint["state_dict"]:
-                    if key.startswith(state_dict_subset_prefix):
-                        new_state_dict[
-                            key[len(state_dict_subset_prefix) :]
-                        ] = checkpoint["state_dict"][key]
             else:
-                new_state_dict = checkpoint["state_dict"]
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.load_state_dict(new_state_dict)
+                checkpoint = torch.load(checkpoint)
+                new_state_dict = {}
+                if state_dict_subset_prefix is not None:
+                    print(
+                        "Loading subset of state dict from checkpoint, key prefix: ",
+                        state_dict_subset_prefix,
+                    )
+                    for key in checkpoint["state_dict"]:
+                        if key.startswith(state_dict_subset_prefix):
+                            new_state_dict[
+                                key[len(state_dict_subset_prefix) :]
+                            ] = checkpoint["state_dict"][key]
+                else:
+                    new_state_dict = checkpoint["state_dict"]
+                self.base = BaseEnformer.from_pretrained(
+                    "EleutherAI/enformer-official-rough"
+                )
+                self.base.load_state_dict(new_state_dict)
 
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:
@@ -110,6 +117,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
         sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -120,6 +128,7 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -547,6 +556,7 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -557,6 +567,7 @@ class PairwiseClassificationFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -794,6 +805,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -802,6 +814,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -954,6 +967,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -962,6 +976,7 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1236,6 +1251,7 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -1244,6 +1260,7 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1577,6 +1594,7 @@ class SingleRegressionFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -1585,6 +1603,7 @@ class SingleRegressionFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1684,6 +1703,7 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -1692,6 +1712,7 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1813,6 +1834,7 @@ class BaselineEnformer(BaseModule):
         sum_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
         output_head_name="human",
         output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -1824,6 +1846,7 @@ class BaselineEnformer(BaseModule):
             warmup_steps=0,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         self.output_head_name = output_head_name
@@ -1898,6 +1921,7 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
+        use_random_init=False,
     ):
         super().__init__(
             lr=lr,
@@ -1906,6 +1930,7 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
             warmup_steps=warmup_steps,
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
+            use_random_init=use_random_init,
         )
 
         # output head for personalized gene expression prediction

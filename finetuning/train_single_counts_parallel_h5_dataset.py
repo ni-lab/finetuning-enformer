@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
+    parser.add_argument("--use_random_init", action=BooleanOptionalAction, default=False)
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument(
         "--resume_from_checkpoint", action=BooleanOptionalAction, default=False
@@ -78,10 +79,13 @@ def main():
         val_ds, batch_size=args.batch_size, shuffle=False
     )
 
+    run_suffix = f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}"
+    if args.use_random_init:
+        run_suffix += "_random_init"
+
     run_save_dir = os.path.join(
         args.save_dir,
-        args.run_name
-        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        args.run_name + run_suffix,
     )
     os.makedirs(run_save_dir, exist_ok=True)
 
@@ -93,8 +97,7 @@ def main():
 
     logger = WandbLogger(
         project="enformer-finetune",
-        name=args.run_name
-        + f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}",
+        name=args.run_name + run_suffix,
         save_dir=logs_dir,
     )
 
@@ -157,6 +160,7 @@ def main():
         n_total_bins=train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
+        use_random_init=args.use_random_init,
     )
 
     resume_flag = args.resume_from_checkpoint
