@@ -11,6 +11,7 @@ from models import (
     BaselineEnformer, PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
     PairwiseRegressionFloatPrecision,
+    PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
 from test_models import (
