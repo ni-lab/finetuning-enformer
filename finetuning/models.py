@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torchmetrics
 from einops import rearrange
 from enformer_pytorch import Enformer as BaseEnformer
+from enformer_pytorch.config_enformer import EnformerConfig
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from torchmetrics import AUROC, Accuracy, Precision, R2Score, Recall
@@ -47,10 +48,8 @@ class BaseModule(L.LightningModule):
         self.warmup_steps = warmup_steps
 
         if use_random_init:
-            self.base = BaseEnformer.from_pretrained(
-                "EleutherAI/enformer-official-rough"
-            )
-            self.base.apply(self.base._init_weights)
+            print("Using random init")
+            self.base = BaseEnformer(EnformerConfig())
         else:
             if checkpoint is None:
                 self.base = BaseEnformer.from_pretrained(
