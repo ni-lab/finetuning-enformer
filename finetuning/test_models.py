@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument("--train_h5_path_for_af_computation", type=str, default=None)
     parser.add_argument("--afs_cache_path", type=str, default=None)
     parser.add_argument("--force_recompute_afs", action="store_true", default=False)
+    parser.add_argument("--max_train_epochs", type=int, default=50)
     return parser.parse_args()
 
 
@@ -88,6 +89,7 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
     checkpoint_dir,
     task,
     patience=5,
+    max_train_epochs=50,
     proceed_even_if_training_incomplete=False,
     create_best_ckpt_copy=False,
 ):
@@ -98,6 +100,7 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
         checkpoint_dir: Directory containing the checkpoints.
         task: Task for which the checkpoints were saved. Can be one of "classification" or "regression". Used to determine the metric to check. For classification, it is "val_acc", and for regression, it is "val_loss".
         patience: Patience for checking if the training is complete.
+        max_train_epochs: Maximum number of training epochs
         proceed_even_if_training_incomplete: If True, the function will not raise an error if the training is not complete.
         create_best_ckpt_copy: If True, the function will create a copy of the best checkpoint in the same directory with the name "best.ckpt".
     """
@@ -156,17 +159,20 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
     if best_checkpoint is None:
         raise ValueError("No checkpoint found in the directory.")
     if max_epoch - best_metric_epoch < patience:
-        if not proceed_even_if_training_incomplete:
-            raise ValueError(
-                f"Training may not be complete. Current best checkpoint is from epoch {best_metric_epoch} and the last checkpoint is from epoch {max_epoch}."
-            )
+        if max_epoch == (max_train_epochs - 1):
+            print("WARNING: Max training epochs completed, so patience ignored")
         else:
-            print(
-                "WARNING: Training may not be complete. Current best checkpoint is from epoch",
-                best_metric_epoch,
-                "and the last checkpoint is from epoch",
-                max_epoch,
-            )
+            if not proceed_even_if_training_incomplete:
+                raise ValueError(
+                    f"Training may not be complete. Current best checkpoint is from epoch {best_metric_epoch} and the last checkpoint is from epoch {max_epoch}."
+                )
+            else:
+                print(
+                    "WARNING: Training may not be complete. Current best checkpoint is from epoch",
+                    best_metric_epoch,
+                    "and the last checkpoint is from epoch",
+                    max_epoch,
+                )
 
     # create a copy of the best checkpoint
     if create_best_ckpt_copy:
@@ -255,6 +261,7 @@ def main():
                 args.checkpoints_dir,
                 task,
                 args.patience,
+                args.max_train_epochs,
                 args.proceed_even_if_training_incomplete,
                 args.create_best_ckpt_copy,
             )
