@@ -76,6 +76,7 @@ def parse_args():
         default=False,
     )
     parser.add_argument("--gaussian_noise_std_multiplier", type=float, default=1)
+    parser.add_argument("--seed_for_noise", type=int, default=97)
     return parser.parse_args()
 
 
@@ -250,6 +251,9 @@ def main():
         )
 
         if args.model_type == "baseline":
+            if args.add_gaussian_noise_to_pretrained_weights:
+                np.random.seed(args.seed_for_noise)
+                torch.manual_seed(args.seed_for_noise)
             model = BaselineEnformer(
                 n_total_bins=(args.seqlen // 128),
                 add_gaussian_noise_to_pretrained_weights=args.add_gaussian_noise_to_pretrained_weights,
