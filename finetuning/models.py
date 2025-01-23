@@ -50,7 +50,9 @@ class BaseModule(L.LightningModule):
         self.warmup_steps = warmup_steps
 
         if use_random_init:
-            assert add_gaussian_noise_to_pretrained_weights is False, "Cannot use random init and add Gaussian noise to pretrained weights at the same time"
+            assert (
+                add_gaussian_noise_to_pretrained_weights is False
+            ), "Cannot use random init and add Gaussian noise to pretrained weights at the same time"
             print("Using random init")
             self.base = BaseEnformer(EnformerConfig())
         else:
@@ -77,16 +79,53 @@ class BaseModule(L.LightningModule):
                     "EleutherAI/enformer-official-rough"
                 )
                 self.base.load_state_dict(new_state_dict)
-            
+
             # to determine the usefulness of pretraining, we can perturb the pretrained weights with Gaussian noise and see if the model still performs well after fine-tuning
             # for each weight matrix, we add Gaussian noise with standard deviation equal to original_std * gaussian_noise_std_multiplier
             # do not add noise to the batch norm parameters
             if add_gaussian_noise_to_pretrained_weights:
-                print("Injecting Gaussian noise to pretrained weights with std multiplier: ", gaussian_noise_std_multiplier)
+                print(
+                    "Injecting Gaussian noise to pretrained weights with std multiplier: ",
+                    gaussian_noise_std_multiplier,
+                )
+
+                batch_norm_parameter_names = [
+                    "stem.1.fn.0.weight",
+                    "stem.1.fn.0.bias",
+                    "conv_tower.0.0.0.weight",
+                    "conv_tower.0.0.0.bias",
+                    "conv_tower.0.1.fn.0.weight",
+                    "conv_tower.0.1.fn.0.bias",
+                    "conv_tower.1.0.0.weight",
+                    "conv_tower.1.0.0.bias",
+                    "conv_tower.1.1.fn.0.weight",
+                    "conv_tower.1.1.fn.0.bias",
+                    "conv_tower.2.0.0.weight",
+                    "conv_tower.2.0.0.bias",
+                    "conv_tower.2.1.fn.0.weight",
+                    "conv_tower.2.1.fn.0.bias",
+                    "conv_tower.3.0.0.weight",
+                    "conv_tower.3.0.0.bias",
+                    "conv_tower.3.1.fn.0.weight",
+                    "conv_tower.3.1.fn.0.bias",
+                    "conv_tower.4.0.0.weight",
+                    "conv_tower.4.0.0.bias",
+                    "conv_tower.4.1.fn.0.weight",
+                    "conv_tower.4.1.fn.0.bias",
+                    "conv_tower.5.0.0.weight",
+                    "conv_tower.5.0.0.bias",
+                    "conv_tower.5.1.fn.0.weight",
+                    "conv_tower.5.1.fn.0.bias",
+                    "final_pointwise.1.0.weight",
+                    "final_pointwise.1.0.bias",
+                ]
+
                 ori_parameter_stds = {}
+                bn_parameters_encountered = 0
                 for name, param in self.base.named_parameters():
-                    if "batch_norm" in name:
+                    if name in batch_norm_parameter_names:
                         print("Skipping ", name)
+                        bn_parameters_encountered += 1
                         continue
                     if param.requires_grad:
                         original_std = torch.std(param)
@@ -95,15 +134,28 @@ class BaseModule(L.LightningModule):
                             std=torch.abs(param) * gaussian_noise_std_multiplier,
                         )
                         new_std = torch.std(param)
-                        print("Added noise to ", name, " with original std: ", original_std, " and new std: ", new_std)
+                        print(
+                            "Added noise to ",
+                            name,
+                            " with original std: ",
+                            original_std,
+                            " and new std: ",
+                            new_std,
+                        )
                         ori_parameter_stds[name] = original_std.cpu().detach().numpy()
-                
+                assert bn_parameters_encountered == len(
+                    batch_norm_parameter_names
+                ), "Not all batch norm parameters were encountered"
+
                 # make sure that the noise is added correctly
                 for name, param in self.base.named_parameters():
-                    if "batch_norm" in name:
+                    if name in batch_norm_parameter_names:
                         continue
                     if param.requires_grad:
-                        assert torch.std(param).cpu().detach().numpy() != ori_parameter_stds[name]
+                        assert (
+                            torch.std(param).cpu().detach().numpy()
+                            != ori_parameter_stds[name]
+                        )
 
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:
@@ -591,7 +643,7 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         state_dict_subset_prefix=None,
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
-        gaussian_noise_std_multiplier=1,        
+        gaussian_noise_std_multiplier=1,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -1296,7 +1348,7 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
-        use_random_init=False,        
+        use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
     ):
@@ -1643,7 +1695,7 @@ class SingleRegressionFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
-        use_random_init=False,        
+        use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
     ):
