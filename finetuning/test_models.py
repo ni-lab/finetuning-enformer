@@ -261,7 +261,7 @@ def main():
             )
             if args.add_gaussian_noise_to_pretrained_weights:
                 print(
-                    f"Predicting using BaselineEnformer with Gaussian noise std multiplier {args.gaussian_noise_std_multiplier}"
+                    f"Predicting using BaselineEnformer with Gaussian noise std multiplier {args.gaussian_noise_std_multiplier} and seed {args.seed_for_noise}"
                 )
             else:
                 print("Predicting using BaselineEnformer")
