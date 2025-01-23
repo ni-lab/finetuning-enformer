@@ -45,6 +45,8 @@ def parse_args():
     parser.add_argument(
         "--use_random_init", action=BooleanOptionalAction, default=False
     )
+    parser.add_argument("--add_gaussian_noise_to_pretrained_weights", action=BooleanOptionalAction, default=False)
+    parser.add_argument("--gaussian_noise_std_multiplier", type=float, default=1)
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(
@@ -115,6 +117,8 @@ def main():
         run_suffix += f"_subsample_ratio_{args.train_set_subsample_ratio}"
     if args.use_random_init:
         run_suffix += "_random_init"
+    if args.add_gaussian_noise_to_pretrained_weights:
+        run_suffix += f"_gaussian_noise_std_{args.gaussian_noise_std_multiplier}"
 
     run_save_dir = os.path.join(
         args.save_dir,
@@ -179,7 +183,7 @@ def main():
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
-        callbacks=[checkpointing_cb, early_stopping_cb],
+        callbacks=[checkpointing_cb, early_stopping_cb] if args.use_random_init else [checkpointing_cb], # don't use early stopping if using random init to aid convergence
         precision="32-true",
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)
@@ -198,6 +202,8 @@ def main():
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
         use_random_init=args.use_random_init,
+        add_gaussian_noise_to_pretrained_weights=args.add_gaussian_noise_to_pretrained_weights,
+        gaussian_noise_std_multiplier=args.gaussian_noise_std_multiplier,
     )
 
     resume_flag = args.resume_from_checkpoint

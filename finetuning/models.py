@@ -39,6 +39,8 @@ class BaseModule(L.LightningModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -48,6 +50,7 @@ class BaseModule(L.LightningModule):
         self.warmup_steps = warmup_steps
 
         if use_random_init:
+            assert add_gaussian_noise_to_pretrained_weights is False, "Cannot use random init and add Gaussian noise to pretrained weights at the same time"
             print("Using random init")
             self.base = BaseEnformer(EnformerConfig())
         else:
@@ -74,6 +77,33 @@ class BaseModule(L.LightningModule):
                     "EleutherAI/enformer-official-rough"
                 )
                 self.base.load_state_dict(new_state_dict)
+            
+            # to determine the usefulness of pretraining, we can perturb the pretrained weights with Gaussian noise and see if the model still performs well after fine-tuning
+            # for each weight matrix, we add Gaussian noise with standard deviation equal to original_std * gaussian_noise_std_multiplier
+            # do not add noise to the batch norm parameters
+            if add_gaussian_noise_to_pretrained_weights:
+                print("Injecting Gaussian noise to pretrained weights with std multiplier: ", gaussian_noise_std_multiplier)
+                ori_parameter_stds = {}
+                for name, param in self.base.named_parameters():
+                    if "batch_norm" in name:
+                        print("Skipping ", name)
+                        continue
+                    if param.requires_grad:
+                        original_std = torch.std(param)
+                        param.data += torch.normal(
+                            mean=0.0,
+                            std=torch.abs(param) * gaussian_noise_std_multiplier,
+                        )
+                        new_std = torch.std(param)
+                        print("Added noise to ", name, " with original std: ", original_std, " and new std: ", new_std)
+                        ori_parameter_stds[name] = original_std.cpu().detach().numpy()
+                
+                # make sure that the noise is added correctly
+                for name, param in self.base.named_parameters():
+                    if "batch_norm" in name:
+                        continue
+                    if param.requires_grad:
+                        assert torch.std(param).cpu().detach().numpy() != ori_parameter_stds[name]
 
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:
@@ -117,6 +147,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -128,6 +160,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -556,6 +590,8 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,        
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -567,6 +603,8 @@ class PairwiseClassificationFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -805,6 +843,8 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -814,6 +854,8 @@ class PairwiseRegressionFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -967,6 +1009,8 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -976,6 +1020,8 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1250,7 +1296,9 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
-        use_random_init=False,
+        use_random_init=False,        
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -1260,6 +1308,8 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1593,7 +1643,9 @@ class SingleRegressionFloatPrecision(BaseModule):
         avg_center_n_bins: int = 10,
         checkpoint=None,
         state_dict_subset_prefix=None,
-        use_random_init=False,
+        use_random_init=False,        
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -1603,6 +1655,8 @@ class SingleRegressionFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1703,6 +1757,8 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -1712,6 +1768,8 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1834,6 +1892,8 @@ class BaselineEnformer(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
         output_head_name="human",
         output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -1846,6 +1906,8 @@ class BaselineEnformer(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         self.output_head_name = output_head_name
@@ -1921,6 +1983,8 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
         checkpoint=None,
         state_dict_subset_prefix=None,
         use_random_init=False,
+        add_gaussian_noise_to_pretrained_weights=False,
+        gaussian_noise_std_multiplier=1,
     ):
         super().__init__(
             lr=lr,
@@ -1930,6 +1994,8 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
             checkpoint=checkpoint,
             state_dict_subset_prefix=state_dict_subset_prefix,
             use_random_init=use_random_init,
+            add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
+            gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
         )
 
         # output head for personalized gene expression prediction
