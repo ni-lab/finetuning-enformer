@@ -1,6 +1,6 @@
 import os
 import pdb
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
@@ -70,6 +70,12 @@ def parse_args():
     parser.add_argument("--afs_cache_path", type=str, default=None)
     parser.add_argument("--force_recompute_afs", action="store_true", default=False)
     parser.add_argument("--max_train_epochs", type=int, default=50)
+    parser.add_argument(
+        "--add_gaussian_noise_to_pretrained_weights",
+        action=BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--gaussian_noise_std_multiplier", type=float, default=1)
     return parser.parse_args()
 
 
@@ -246,8 +252,15 @@ def main():
         if args.model_type == "baseline":
             model = BaselineEnformer(
                 n_total_bins=(args.seqlen // 128),
+                add_gaussian_noise_to_pretrained_weights=args.add_gaussian_noise_to_pretrained_weights,
+                gaussian_noise_std_multiplier=args.gaussian_noise_std_multiplier,
             )
-            print("Predicting using BaselineEnformer")
+            if args.add_gaussian_noise_to_pretrained_weights:
+                print(
+                    f"Predicting using BaselineEnformer with Gaussian noise std multiplier {args.gaussian_noise_std_multiplier}"
+                )
+            else:
+                print("Predicting using BaselineEnformer")
 
             trainer.predict(
                 model,
