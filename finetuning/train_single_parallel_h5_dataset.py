@@ -40,7 +40,11 @@ def parse_args():
     parser.add_argument(
         "--use_random_init", action=BooleanOptionalAction, default=False
     )
-    parser.add_argument("--add_gaussian_noise_to_pretrained_weights", action=BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--add_gaussian_noise_to_pretrained_weights",
+        action=BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--gaussian_noise_std_multiplier", type=float, default=1)
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument(
@@ -150,7 +154,11 @@ def main():
         gradient_clip_val=0.2,
         logger=logger,
         default_root_dir=args.save_dir,
-        callbacks=[checkpointing_cb, early_stopping_cb] if args.use_random_init else [checkpointing_cb], # don't use early stopping if using random init to aid convergence
+        callbacks=[checkpointing_cb, early_stopping_cb]
+        if not args.use_random_init
+        else [
+            checkpointing_cb
+        ],  # don't use early stopping if using random init to aid convergence
         precision="32-true",
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)
