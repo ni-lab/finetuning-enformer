@@ -970,7 +970,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         Y2_hat = Y_hat[X1.shape[0] :]
         Y_diff = Y1_hat - Y2_hat
         loss = self.mse_loss(Y_diff, Y)
-        self.log("train/pairwise_regression_loss", loss)
+        self.log("train/pairwise_regression_loss", loss, on_step=True, on_epoch=True)
 
         self.log("train/lr", self.trainer.optimizers[0].param_groups[0]["lr"])
         if self.hparams.weight_decay is not None:
@@ -1153,7 +1153,9 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
                 Y2_hat = Y_hat[X1.shape[0] :]
                 Y_diff = Y1_hat - Y2_hat
                 loss = self.mse_loss(Y_diff, Y)
-                self.log("train/pairwise_regression_loss", loss)
+                self.log(
+                    "train/pairwise_regression_loss", loss, on_step=True, on_epoch=True
+                )
                 total_loss += loss
 
             elif i == 1:  # this is the original human training data
@@ -2146,7 +2148,9 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
                 Y2_hat = Y_hat[X1.shape[0] :]
                 Y_diff = Y1_hat - Y2_hat
                 loss = self.mse_loss(Y_diff, Y)
-                self.log("train/pairwise_regression_loss", loss)
+                self.log(
+                    "train/pairwise_regression_loss", loss, on_step=True, on_epoch=True
+                )
                 total_loss += loss
 
             elif i == 1:  # this is the Malinois MPRA data
@@ -2164,7 +2168,12 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
                 Y_alt_hat = Y_hat[X_ref.shape[0] :]
                 Y_diff = Y_ref_hat - Y_alt_hat
                 loss = self.malinois_mse_loss(Y_diff[mask], Y[mask])
-                self.log("train/malinois_pairwise_regression_loss", loss)
+                self.log(
+                    "train/malinois_pairwise_regression_loss",
+                    loss,
+                    on_step=True,
+                    on_epoch=True,
+                )
                 total_loss += loss
 
             else:
