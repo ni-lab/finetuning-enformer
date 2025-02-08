@@ -135,8 +135,27 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
 
             if best_metric is None or ckpt_metric >= best_metric:
                 if best_metric is not None and ckpt_metric == best_metric:
-                    ckpt_epoch = int(f.split("epoch=")[1].split("-")[0])
-                    if ckpt_epoch < best_metric_epoch:
+                    # open the ckpt files to compare the exact metric values
+                    best_ckpt_so_far = torch.load(
+                        os.path.join(checkpoint_dir, best_checkpoint),
+                        map_location="cpu",
+                    )
+                    ckpt = torch.load(
+                        os.path.join(checkpoint_dir, f), map_location="cpu"
+                    )
+
+                    check = False
+                    for key in ckpt["callbacks"].keys():
+                        if key.startswith("ModelCheckpoint"):
+                            ckpt_metric = ckpt["callbacks"][key]["current_score"]
+                            best_metric = best_ckpt_so_far["callbacks"][key][
+                                "current_score"
+                            ]
+                            if ckpt_metric > best_metric:
+                                check = True
+                            break
+
+                    if not check:
                         continue
 
                 best_metric = ckpt_metric
@@ -152,8 +171,27 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
 
             if best_metric is None or ckpt_metric <= best_metric:
                 if best_metric is not None and ckpt_metric == best_metric:
-                    ckpt_epoch = int(f.split("epoch=")[1].split("-")[0])
-                    if ckpt_epoch < best_metric_epoch:
+                    # open the ckpt files to compare the exact metric values
+                    best_ckpt_so_far = torch.load(
+                        os.path.join(checkpoint_dir, best_checkpoint),
+                        map_location="cpu",
+                    )
+                    ckpt = torch.load(
+                        os.path.join(checkpoint_dir, f), map_location="cpu"
+                    )
+
+                    check = False
+                    for key in ckpt["callbacks"].keys():
+                        if key.startswith("ModelCheckpoint"):
+                            ckpt_metric = ckpt["callbacks"][key]["current_score"]
+                            best_metric = best_ckpt_so_far["callbacks"][key][
+                                "current_score"
+                            ]
+                            if ckpt_metric < best_metric:
+                                check = True
+                            break
+
+                    if not check:
                         continue
 
                 best_metric = ckpt_metric
