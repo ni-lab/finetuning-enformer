@@ -126,6 +126,7 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
             )
             continue
 
+        max_epoch = max(max_epoch, int(f.split("epoch=")[1].split("-")[0]))
         ckpt_metric = None
         if task == "classification":
             # names are of the form "epoch={epoch}-step={step}-val_loss={classification_loss:.4f}-val_acc={classification_accuracy:.4f}.ckpt"
@@ -203,8 +204,6 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
                 best_metric = ckpt_metric
                 best_checkpoint = f
                 best_metric_epoch = int(f.split("epoch=")[1].split("-")[0])
-
-        max_epoch = max(max_epoch, int(f.split("epoch=")[1].split("-")[0]))
 
     # check if the training is complete
     if best_checkpoint is None:
