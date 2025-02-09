@@ -147,6 +147,9 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
                     check = False
                     for key in ckpt["callbacks"].keys():
                         if key.startswith("ModelCheckpoint"):
+                            print(
+                                f"Using scores from ckpts to compare the following ckpt files: {best_checkpoint} and {f}"
+                            )
                             ckpt_metric = ckpt["callbacks"][key]["current_score"]
                             best_metric = best_ckpt_so_far["callbacks"][key][
                                 "current_score"
@@ -183,6 +186,9 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
                     check = False
                     for key in ckpt["callbacks"].keys():
                         if key.startswith("ModelCheckpoint"):
+                            print(
+                                f"Using scores from ckpts to compare the following ckpt files: {best_checkpoint} and {f}"
+                            )
                             ckpt_metric = ckpt["callbacks"][key]["current_score"]
                             best_metric = best_ckpt_so_far["callbacks"][key][
                                 "current_score"
