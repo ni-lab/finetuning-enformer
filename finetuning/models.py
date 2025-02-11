@@ -41,6 +41,8 @@ class BaseModule(L.LightningModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -157,6 +159,50 @@ class BaseModule(L.LightningModule):
                             != ori_parameter_stds[name]
                         )
 
+        if freeze_cnn:
+            initial_number_of_trainable_parameters = sum(
+                p.numel() for p in self.base.parameters() if p.requires_grad
+            )
+            for name, param in self.base.named_parameters():
+                # names start with stem or conv_tower
+                if name.startswith("stem") or name.startswith("conv_tower"):
+                    param.requires_grad = False
+            final_number_of_trainable_parameters = sum(
+                p.numel() for p in self.base.parameters() if p.requires_grad
+            )
+            print(
+                "CNN frozen, number of trainable parameters reduced from ",
+                initial_number_of_trainable_parameters,
+                " to ",
+                final_number_of_trainable_parameters,
+            )
+            assert (
+                final_number_of_trainable_parameters
+                < initial_number_of_trainable_parameters
+            )
+
+        if freeze_transformer:
+            initial_number_of_trainable_parameters = sum(
+                p.numel() for p in self.base.parameters() if p.requires_grad
+            )
+            for name, param in self.base.named_parameters():
+                # names start with transformer
+                if name.startswith("transformer"):
+                    param.requires_grad = False
+            final_number_of_trainable_parameters = sum(
+                p.numel() for p in self.base.parameters() if p.requires_grad
+            )
+            print(
+                "Transformer frozen, number of trainable parameters reduced from ",
+                initial_number_of_trainable_parameters,
+                " to ",
+                final_number_of_trainable_parameters,
+            )
+            assert (
+                final_number_of_trainable_parameters
+                < initial_number_of_trainable_parameters
+            )
+
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:
             optimizer = torch.optim.Adam(
@@ -201,6 +247,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -214,6 +262,8 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -644,6 +694,8 @@ class PairwiseClassificationFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
         pairwise_output_head_name="human",
         pairwise_output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -657,6 +709,8 @@ class PairwiseClassificationFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         self.pairwise_output_head_name = pairwise_output_head_name
@@ -897,6 +951,8 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -908,6 +964,8 @@ class PairwiseRegressionFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1063,6 +1121,8 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -1074,6 +1134,8 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1353,6 +1415,8 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -1364,6 +1428,8 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1700,6 +1766,8 @@ class SingleRegressionFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -1711,6 +1779,8 @@ class SingleRegressionFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1813,6 +1883,8 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -1824,6 +1896,8 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         enformer_hidden_dim = 2 * self.base.dim
@@ -1948,6 +2022,8 @@ class BaselineEnformer(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
         output_head_name="human",
         output_head_ind=5110,  # this is the CAGE GM12878 cell line output head
     ):
@@ -1962,6 +2038,8 @@ class BaselineEnformer(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         self.output_head_name = output_head_name
@@ -2039,6 +2117,8 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
         use_random_init=False,
         add_gaussian_noise_to_pretrained_weights=False,
         gaussian_noise_std_multiplier=1,
+        freeze_cnn=False,
+        freeze_transformer=False,
     ):
         super().__init__(
             lr=lr,
@@ -2050,6 +2130,8 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
             use_random_init=use_random_init,
             add_gaussian_noise_to_pretrained_weights=add_gaussian_noise_to_pretrained_weights,
             gaussian_noise_std_multiplier=gaussian_noise_std_multiplier,
+            freeze_cnn=freeze_cnn,
+            freeze_transformer=freeze_transformer,
         )
 
         # output head for personalized gene expression prediction

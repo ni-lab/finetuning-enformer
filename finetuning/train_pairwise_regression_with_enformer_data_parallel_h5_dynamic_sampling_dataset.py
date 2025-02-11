@@ -50,6 +50,10 @@ def parse_args():
         default=False,
     )
     parser.add_argument("--gaussian_noise_std_multiplier", type=float, default=1)
+    parser.add_argument("--freeze_cnn", action=BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--freeze_transformer", action=BooleanOptionalAction, default=False
+    )
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(
@@ -143,6 +147,10 @@ def main():
         run_suffix += "_random_init"
     if args.add_gaussian_noise_to_pretrained_weights:
         run_suffix += f"_gaussian_noise_std_{args.gaussian_noise_std_multiplier}"
+    if args.freeze_cnn:
+        run_suffix += "_freeze_cnn"
+    if args.freeze_transformer:
+        run_suffix += "_freeze_transformer"
 
     run_save_dir = os.path.join(
         args.save_dir,
@@ -228,6 +236,8 @@ def main():
         use_random_init=args.use_random_init,
         add_gaussian_noise_to_pretrained_weights=args.add_gaussian_noise_to_pretrained_weights,
         gaussian_noise_std_multiplier=args.gaussian_noise_std_multiplier,
+        freeze_cnn=args.freeze_cnn,
+        freeze_transformer=args.freeze_transformer,
     )
 
     resume_flag = args.resume_from_checkpoint
@@ -254,7 +264,7 @@ def main():
 
             previous_ckpt_path = os.path.join(ckpts_dir, previous_ckpt_path)
             print(f"Resuming from checkpoint: {previous_ckpt_path}")
-            trainer.validate(model, dataloaders=val_dl, ckpt_path=previous_ckpt_path)
+            # trainer.validate(model, dataloaders=val_dl, ckpt_path=previous_ckpt_path)
             trainer.fit(model, train_dl, val_dl, ckpt_path=previous_ckpt_path)
 
     if not resume_flag:
