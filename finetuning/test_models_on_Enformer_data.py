@@ -451,3 +451,9 @@ def main():
         preds=test_preds,
         targets=test_targets,
     )
+
+    print("Done saving predictions and targets.")
+
+
+if __name__ == "__main__":
+    main()
