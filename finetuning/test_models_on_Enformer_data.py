@@ -3,8 +3,9 @@ import pdb
 from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
+import pandas as pd
 import torch
-from datasets import SampleH5Dataset
+from datasets import EnformerDataset
 from lightning import Trainer
 from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
@@ -14,6 +15,8 @@ from models import (
     PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
+from scipy.stats import pearsonr, spearmanr
+from sklearn.metrics import r2_score
 from tqdm import tqdm
 
 
@@ -40,7 +43,13 @@ class CustomWriter(BasePredictionWriter):
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument("test_data_path", type=str)
+    parser.add_argument("enformer_data_dir", type=str)
+    parser.add_argument(
+        "species", type=str, choices=["human", "mouse"], default="human"
+    )
+    parser.add_argument(
+        "split", type=str, choices=["train", "val", "test"], default="test"
+    )
     parser.add_argument("predictions_dir", type=str)
     parser.add_argument(
         "model_type",
@@ -58,17 +67,11 @@ def parse_args():
     )
     parser.add_argument("checkpoints_dir", type=str, default=None)
     parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--use_reverse_complement", action="store_true", default=False)
     parser.add_argument(
         "--proceed_even_if_training_incomplete", action="store_true", default=False
     )
     parser.add_argument("--create_best_ckpt_copy", action="store_true", default=False)
-    parser.add_argument("--rare_variant_af_threshold", type=float, default=0)
-    parser.add_argument("--train_h5_path_for_af_computation", type=str, default=None)
-    parser.add_argument("--afs_cache_path", type=str, default=None)
-    parser.add_argument("--force_recompute_afs", action="store_true", default=False)
     parser.add_argument("--max_train_epochs", type=int, default=50)
     parser.add_argument(
         "--add_gaussian_noise_to_pretrained_weights",
@@ -226,29 +229,12 @@ def main():
     args = parse_args()
     os.makedirs(args.predictions_dir, exist_ok=True)
 
-    remove_rare_variants = False
-    if args.rare_variant_af_threshold > 0:
-        assert (
-            args.train_h5_path_for_af_computation is not None
-        ), "Please provide the path to the training data for computing the allele frequencies of the variants."
-        print(
-            f"Filtering out rare variants with allele frequency less than {args.rare_variant_af_threshold}"
-        )
-        remove_rare_variants = True
-        args.predictions_dir = os.path.join(
-            args.predictions_dir, f"af_{args.rare_variant_af_threshold}"
-        )
-        os.makedirs(args.predictions_dir, exist_ok=True)
-
-    test_ds = SampleH5Dataset(
-        args.test_data_path,
-        seqlen=args.seqlen,
-        return_reverse_complement=args.use_reverse_complement,
-        remove_rare_variants=remove_rare_variants,
-        rare_variant_af_threshold=args.rare_variant_af_threshold,
-        train_h5_path_for_af_computation=args.train_h5_path_for_af_computation,
-        force_recompute_afs=args.force_recompute_afs,
-        afs_cache_path=args.afs_cache_path,
+    test_ds = EnformerDataset(
+        args.enformer_data_path,
+        species=args.species,
+        split=args.split,
+        reverse_complement=False,
+        random_shift=False,
     )
 
     test_dl = torch.utils.data.DataLoader(
@@ -410,43 +396,58 @@ def main():
             torch.distributed.barrier()
 
     preds = []
-    true_idxs = []
+    targets = []
     batch_indices = []
     for i in range(n_gpus):
         p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
         p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
+        p_y = np.concatenate([batch["Y"] for batch in p])
         preds.append(p_yhat)
-        true_idxs.append(np.concatenate([batch["true_idx"] for batch in p]))
+        targets.append(p_y)
 
         bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
         bi = np.concatenate([inds for inds in bi])
         batch_indices.append(bi)
 
     test_preds = np.concatenate(preds, axis=0)
-    true_idxs = np.concatenate(true_idxs, axis=0)
+    test_targets = np.concatenate(targets, axis=0)
     batch_indices = np.concatenate(batch_indices, axis=0)
 
-    # sort the predictions, true_idxs and batch_indices based on the original order
+    # sort the predictions, targets and batch_indices based on the original order
     sorted_idxs = np.argsort(batch_indices)
     test_preds = test_preds[sorted_idxs]
-    true_idxs = true_idxs[sorted_idxs]
+    test_targets = test_targets[sorted_idxs]
 
-    # now average the predictions that have the same true index
-    unique_true_idxs = np.unique(true_idxs)
-    unique_true_idxs = np.sort(unique_true_idxs)
-    averaged_preds = []
-    for idx in unique_true_idxs:
-        idx_mask = true_idxs == idx
-        avg_pred = np.mean(test_preds[idx_mask], axis=0)
-        averaged_preds.append(avg_pred)
-    test_preds = np.array(averaged_preds)
+    # reshape to make metrics calculation easier
+    test_preds = test_preds.reshape(-1, test_preds.shape[-1])
+    test_targets = test_targets.reshape(-1, test_targets.shape[-1])
 
-    assert test_preds.size == test_ds.genes.size
-    test_output_path = os.path.join(args.predictions_dir, "test_preds.npz")
-    np.savez(
-        test_output_path, preds=test_preds, genes=test_ds.genes, samples=test_ds.samples
+    # generate summary df containing pearson correlation, spearman correlation, and R2 score
+    target_names = pd.read_csv(f"data/targets_{args.species}.txt", sep="\t")[
+        "description"
+    ].values
+    assert len(target_names) == test_targets.shape[1]
+
+    summary_df = {}
+    summary_df["track_name"] = target_names
+    summary_df["pearson_corr"] = [
+        pearsonr(test_targets[:, i], test_preds[:, i])[0]
+        for i in range(test_targets.shape[1])
+    ]
+    summary_df["spearman_corr"] = [
+        spearmanr(test_targets[:, i], test_preds[:, i])[0]
+        for i in range(test_targets.shape[1])
+    ]
+    summary_df["r2_score"] = [
+        r2_score(test_targets[:, i], test_preds[:, i])
+        for i in range(test_targets.shape[1])
+    ]
+    summary_df = pd.DataFrame(summary_df)
+    summary_df.to_csv(os.path.join(args.predictions_dir, "summary_df.csv"), index=False)
+
+    # save the predictions and targets
+    np.savez_compressed(
+        os.path.join(args.predictions_dir, "predictions.npz"),
+        preds=test_preds,
+        targets=test_targets,
     )
-
-
-if __name__ == "__main__":
-    main()

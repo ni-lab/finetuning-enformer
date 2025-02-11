@@ -638,6 +638,20 @@ class PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision(BaseModu
                         "Y2_hat": Y2_hat,
                         "skellum_prob": skellum_prob,
                     }
+
+            elif (
+                "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+            ):  # this is the original enformer training data
+                X = batch["seq"]
+                Y = batch["y"].float()
+                base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+                Y_hat = self(
+                    X,
+                    return_base_predictions=True,
+                    base_predictions_head=base_predictions_head,
+                )
+                return {"Y_hat": Y_hat, "Y": Y}
+
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
@@ -915,6 +929,20 @@ class PairwiseClassificationFloatPrecision(BaseModule):
                     "Y2_hat": Y2_hat,
                     "skellum_prob": skellum_prob,
                 }
+
+        elif (
+            "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+        ):  # this is the original enformer training data
+            X = batch["seq"]
+            Y = batch["y"].float()
+            base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+            Y_hat = self(
+                X,
+                return_base_predictions=True,
+                base_predictions_head=base_predictions_head,
+            )
+            return {"Y_hat": Y_hat, "Y": Y}
+
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
             true_idx = batch["true_idx"]
@@ -1085,6 +1113,20 @@ class PairwiseRegressionFloatPrecision(BaseModule):
                     "Y2_hat": Y2_hat,
                     "Y_diff": Y_diff,
                 }
+
+        elif (
+            "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+        ):  # this is the original enformer training data
+            X = batch["seq"]
+            Y = batch["y"].float()
+            base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+            Y_hat = self(
+                X,
+                return_base_predictions=True,
+                base_predictions_head=base_predictions_head,
+            )
+            return {"Y_hat": Y_hat, "Y": Y}
+
         elif "seq" in batch:  # this is the individual sample data
             X = batch["seq"]
             true_idx = batch["true_idx"]
@@ -1361,6 +1403,20 @@ class PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(BaseModule):
                         "Y2_hat": Y2_hat,
                         "Y_diff": Y_diff,
                     }
+
+            elif (
+                "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+            ):  # this is the original enformer training data
+                X = batch["seq"]
+                Y = batch["y"].float()
+                base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+                Y_hat = self(
+                    X,
+                    return_base_predictions=True,
+                    base_predictions_head=base_predictions_head,
+                )
+                return {"Y_hat": Y_hat, "Y": Y}
+
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
@@ -1709,6 +1765,19 @@ class PairwiseRegressionOnCountsWithOriginalDataJointTrainingFloatPrecision(Base
                         "Y_diff_hat": Y_diff_hat,
                     }
 
+            elif (
+                "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+            ):  # this is the original enformer training data
+                X = batch["seq"]
+                Y = batch["y"].float()
+                base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+                Y_hat = self(
+                    X,
+                    return_base_predictions=True,
+                    base_predictions_head=base_predictions_head,
+                )
+                return {"Y_hat": Y_hat, "Y": Y}
+
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
@@ -1848,6 +1917,19 @@ class SingleRegressionFloatPrecision(BaseModule):
         self.log("val/mse_loss", loss, sync_dist=True, on_epoch=True)
 
     def predict_step(self, batch, batch_idx):
+        if (
+            "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+        ):  # this is the original enformer training data
+            X = batch["seq"]
+            Y = batch["y"].float()
+            base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+            Y_hat = self(
+                X,
+                return_base_predictions=True,
+                base_predictions_head=base_predictions_head,
+            )
+            return {"Y_hat": Y_hat, "Y": Y}
+
         X = batch["seq"]
         true_idx = batch["true_idx"]
         if (
@@ -1991,6 +2073,19 @@ class SingleRegressionOnCountsFloatPrecision(BaseModule):
         )
 
     def predict_step(self, batch, batch_idx):
+        if (
+            "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+        ):  # this is the original enformer training data
+            X = batch["seq"]
+            Y = batch["y"].float()
+            base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+            Y_hat = self(
+                X,
+                return_base_predictions=True,
+                base_predictions_head=base_predictions_head,
+            )
+            return {"Y_hat": Y_hat, "Y": Y}
+
         X, Y, Z = batch["seq"], batch["y"], batch["z"]
         true_idx = batch["true_idx"]
         if (
@@ -2051,7 +2146,13 @@ class BaselineEnformer(BaseModule):
         self,
         X,
         no_haplotype: bool = False,
+        return_base_predictions: bool = False,
+        base_predictions_head: str = None,
     ):
+        if return_base_predictions:
+            Y = self.base(X, head=base_predictions_head, target_length=896)
+            return Y
+
         """
         X (tensor): (sample * haplotype, length, 4) or (sample * haplotype, length) or (sample, length, 4) or (sample, haplotype, length, 4) or (sample, haplotype, length)
         """
@@ -2080,6 +2181,20 @@ class BaselineEnformer(BaseModule):
         assert (
             "seq" in batch
         ), "BaselineEnformer is only for inference and requires 'seq' in the batch"
+
+        if (
+            "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+        ):  # this is the original enformer training data
+            X = batch["seq"]
+            Y = batch["y"].float()
+            base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+            Y_hat = self(
+                X,
+                return_base_predictions=True,
+                base_predictions_head=base_predictions_head,
+            )
+            return {"Y_hat": Y_hat, "Y": Y}
+
         X = batch["seq"]
         true_idx = batch["true_idx"]
         if (
@@ -2347,6 +2462,20 @@ class PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision(BaseModule):
                         "Y2_hat": Y2_hat,
                         "Y_diff": Y_diff,
                     }
+
+            elif (
+                "seq" in batch and "y" in batch and len(batch["y"].shape) == 3
+            ):  # this is the original enformer training data
+                X = batch["seq"]
+                Y = batch["y"].float()
+                base_predictions_head = "human" if Y.shape[2] == 5313 else "mouse"
+                Y_hat = self(
+                    X,
+                    return_base_predictions=True,
+                    base_predictions_head=base_predictions_head,
+                )
+                return {"Y_hat": Y_hat, "Y": Y}
+
             elif "seq" in batch:  # this is the individual sample data
                 X = batch["seq"]
                 true_idx = batch["true_idx"]
