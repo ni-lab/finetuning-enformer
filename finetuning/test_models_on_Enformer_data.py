@@ -230,7 +230,7 @@ def main():
     os.makedirs(args.predictions_dir, exist_ok=True)
 
     test_ds = EnformerDataset(
-        args.enformer_data_path,
+        args.enformer_data_dir,
         species=args.species,
         split=args.split,
         reverse_complement=False,
