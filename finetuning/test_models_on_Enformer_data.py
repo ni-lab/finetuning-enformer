@@ -406,7 +406,7 @@ def main():
     test_targets = test_targets.reshape(-1, test_targets.shape[-1])
 
     # generate summary df containing pearson correlation, spearman correlation, and R2 score
-    target_names = pd.read_csv(f"data/targets_{args.species}.txt", sep="\t")[
+    target_names = pd.read_csv(f"finetuning/data/targets_{args.species}.txt", sep="\t")[
         "description"
     ].values
     assert len(target_names) == test_targets.shape[1]
