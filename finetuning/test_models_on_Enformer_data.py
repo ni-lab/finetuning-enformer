@@ -33,13 +33,6 @@ class CustomWriter(BasePredictionWriter):
             os.path.join(self.output_dir, f"predictions_{trainer.global_rank}.pt"),
         )
 
-        # optionally, you can also save `batch_indices` to get the information about the data index
-        # from your prediction data
-        torch.save(
-            batch_indices,
-            os.path.join(self.output_dir, f"batch_indices_{trainer.global_rank}.pt"),
-        )
-
 
 def parse_args():
     parser = ArgumentParser()
@@ -398,7 +391,6 @@ def main():
 
     preds = []
     targets = []
-    batch_indices = []
     for i in range(n_gpus):
         p = torch.load(os.path.join(args.predictions_dir, f"predictions_{i}.pt"))
         p_yhat = np.concatenate([batch["Y_hat"] for batch in p])
@@ -406,18 +398,8 @@ def main():
         preds.append(p_yhat)
         targets.append(p_y)
 
-        bi = torch.load(os.path.join(args.predictions_dir, f"batch_indices_{i}.pt"))[0]
-        bi = np.concatenate([inds for inds in bi])
-        batch_indices.append(bi)
-
     test_preds = np.concatenate(preds, axis=0)
     test_targets = np.concatenate(targets, axis=0)
-    batch_indices = np.concatenate(batch_indices, axis=0)
-
-    # sort the predictions, targets and batch_indices based on the original order
-    sorted_idxs = np.argsort(batch_indices)
-    test_preds = test_preds[sorted_idxs]
-    test_targets = test_targets[sorted_idxs]
 
     # reshape to make metrics calculation easier
     test_preds = test_preds.reshape(-1, test_preds.shape[-1])
