@@ -306,8 +306,8 @@ def main():
     model = PairwiseRegressionFloatPrecision(
         lr=args.lr,
         weight_decay=args.weight_decay,
-        use_scheduler=args.use_scheduler,
-        warmup_steps=args.warmup_steps,
+        use_scheduler=False,
+        warmup_steps=0,
         n_total_bins=384,
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
