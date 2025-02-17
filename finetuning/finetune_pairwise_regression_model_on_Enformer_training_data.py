@@ -297,15 +297,6 @@ def main():
         strategy="ddp_find_unused_parameters_true",
     )
 
-    model = PairwiseRegressionFloatPrecision(
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        use_scheduler=False,
-        warmup_steps=0,
-        n_total_bins=384,
-        finetune_enformer_output_heads_only=True,
-    )
-
     # find best checkpoint from base finetuning run and restore those weights
     best_ckpt_path_from_base_finetuning_run = (
         find_best_checkpoint_and_verify_that_training_is_complete(
@@ -313,7 +304,10 @@ def main():
             task="regression",
         )
     )
-    model.load_from_checkpoint(best_ckpt_path_from_base_finetuning_run)
+    model = PairwiseRegressionFloatPrecision.load_from_checkpoint(
+        best_ckpt_path_from_base_finetuning_run
+    )
+    model.finetune_enformer_output_heads_only = True
 
     # freeze all weights except those of the Enformer output heads
     ori_num_params = sum(p.numel() for p in model.parameters())
