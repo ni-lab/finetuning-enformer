@@ -1209,7 +1209,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
                     on_epoch=True,
                 )
 
-            elif dataloader_idx == 2:  # this is the original mouse training data
+            elif dataloader_idx == 1:  # this is the original mouse training data
                 X, Y = batch["seq"], batch["y"]
                 Y_hat = self(
                     X, return_base_predictions=True, base_predictions_head="mouse"
