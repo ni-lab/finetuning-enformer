@@ -225,6 +225,18 @@ class BaseModule(L.LightningModule):
             < initial_number_of_trainable_parameters
         )
 
+        self.all_metrics = torchmetrics.MetricCollection(
+            {
+                "human_r2_score": R2Score(num_outputs=5313),
+                "mouse_r2_score": R2Score(num_outputs=1643),
+            }
+        )
+
+        self.train_metrics = self.all_metrics.clone(prefix="train/")
+        self.val_metrics = self.all_metrics.clone(prefix="val/")
+
+        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
+
     def configure_optimizers(self):
         if self.hparams.weight_decay is None:
             optimizer = torch.optim.Adam(
@@ -1028,7 +1040,6 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         self.center_end = self.center_start + avg_center_n_bins
 
         self.finetune_enformer_output_heads_only = finetune_enformer_output_heads_only
-        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
         if self.finetune_enformer_output_heads_only:
             self.all_metrics = torchmetrics.MetricCollection(
                 {
