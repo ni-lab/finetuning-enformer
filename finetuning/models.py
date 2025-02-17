@@ -1028,6 +1028,7 @@ class PairwiseRegressionFloatPrecision(BaseModule):
         self.center_end = self.center_start + avg_center_n_bins
 
         self.finetune_enformer_output_heads_only = finetune_enformer_output_heads_only
+        self.poisson_loss = nn.PoissonNLLLoss(log_input=False)
         if self.finetune_enformer_output_heads_only:
             self.all_metrics = torchmetrics.MetricCollection(
                 {
