@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument("enformer_data_path", type=str)
     parser.add_argument("run_name", type=str)
     parser.add_argument("save_dir", type=str)
-    parser.add_argument("base_run_name", type=str)
+    parser.add_argument("base_model_name", type=str)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--weight_decay", type=float, default=None)
     parser.add_argument("--batch_size", type=int, default=1)
@@ -32,8 +32,6 @@ def parse_args():
     )
     parser.add_argument("--random_shift_max", type=int, default=3)
     parser.add_argument("--max_epochs", type=int, default=50)
-    parser.add_argument("--enformer_checkpoint", type=str, default=None)
-    parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     parser.add_argument("--data_seed", type=int, default=42)
     parser.add_argument(
         "--resume_from_checkpoint", action=BooleanOptionalAction, default=False
@@ -305,20 +303,13 @@ def main():
         use_scheduler=False,
         warmup_steps=0,
         n_total_bins=384,
-        checkpoint=args.enformer_checkpoint,
-        state_dict_subset_prefix=args.state_dict_subset_prefix,
-        use_random_init=args.use_random_init,
-        add_gaussian_noise_to_pretrained_weights=args.add_gaussian_noise_to_pretrained_weights,
-        gaussian_noise_std_multiplier=args.gaussian_noise_std_multiplier,
-        freeze_cnn=args.freeze_cnn,
-        freeze_transformer=args.freeze_transformer,
         finetune_enformer_output_heads_only=True,
     )
 
     # find best checkpoint from base finetuning run and restore those weights
     best_ckpt_path_from_base_finetuning_run = (
         find_best_checkpoint_and_verify_that_training_is_complete(
-            os.path.join(args.save_dir, args.base_run_name, "checkpoints"),
+            os.path.join(args.save_dir, args.base_model_name, "checkpoints"),
             task="regression",
         )
     )
