@@ -310,9 +310,9 @@ def main():
     model.finetune_enformer_output_heads_only = True
 
     # freeze all weights except those of the Enformer output heads
-    ori_num_params = sum(p.numel() for p in model.parameters())
+    ori_num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     model.freeze_all_weights_except_enformer_output_heads()
-    new_num_params = sum(p.numel() for p in model.parameters())
+    new_num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(
         f"Number of parameters frozen: {ori_num_params - new_num_params} out of {ori_num_params}"
     )
