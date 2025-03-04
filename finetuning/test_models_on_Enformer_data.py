@@ -326,7 +326,7 @@ def main():
                 if "regression" in args.model_type
                 else (
                     "finetune_on_Enformer_data"
-                    if "_on_enformer_data" in args.model_type
+                    if "_on_enformer_data" in args.checkpoints_dir
                     else "classification"
                 )
             )
