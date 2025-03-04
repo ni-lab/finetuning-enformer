@@ -257,7 +257,7 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={step}-val_loss={val/human_r2_score/dataloader_idx_0:.4f}",
+        filename="epoch={epoch}-step={step}-val_r2={val/human_r2_score/dataloader_idx_0:.4f}",
         monitor="val/human_r2_score/dataloader_idx_0",
         mode="max",
         save_top_k=-1,
