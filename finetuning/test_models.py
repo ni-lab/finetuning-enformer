@@ -342,11 +342,11 @@ def main():
         else:
             # find the best checkpoint and verify that the training is complete
             task = (
-                "regression"
-                if "regression" in args.model_type
+                "finetune_on_Enformer_data"
+                if "_on_enformer_data" in args.checkpoints_dir
                 else (
-                    "finetune_on_Enformer_data"
-                    if "_on_enformer_data" in args.checkpoints_dir
+                    "regression"
+                    if "regression" in args.model_type
                     else "classification"
                 )
             )
