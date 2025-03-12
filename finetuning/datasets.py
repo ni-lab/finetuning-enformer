@@ -134,7 +134,9 @@ class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
             valid_indices = np.array_split(
                 valid_indices, num_batches
             )  # list of length num_batches, each element is a numpy array of indices of shape (batch_size * num_replicas,)
-            assert valid_indices[0].shape[0] == (self.batch_size * self.num_replicas)
+            assert valid_indices[0].shape[0] == (
+                self.batch_size * self.num_replicas
+            ), f"valid_indices[0].shape[0]: {valid_indices[0].shape[0]}, batch_size * num_replicas: {self.batch_size * self.num_replicas}"
             all_batches.extend(valid_indices)
 
         all_batches = np.array(all_batches)
