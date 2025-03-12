@@ -37,7 +37,15 @@ def subsample_gene_to_idxs(
 
 
 class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
-    def __init__(self, dataset, batch_size, num_replicas=None, rank=None, shuffle=True):
+    def __init__(
+        self,
+        dataset,
+        batch_size,
+        drop_last=True,
+        num_replicas=None,
+        rank=None,
+        shuffle=True,
+    ):
         """
         A batch sampler that ensures each batch contains samples from a single gene.
         Works with Distributed Data Parallel (DDP) by ensuring each process gets a unique subset of genes.
@@ -49,6 +57,8 @@ class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
             rank: Process rank in DDP (automatically inferred if None).
             shuffle: Whether to shuffle genes across epochs.
         """
+        super().__init__(dataset, batch_size, drop_last)
+
         self.dataset = dataset
         assert isinstance(
             self.dataset, SampleH5Dataset
