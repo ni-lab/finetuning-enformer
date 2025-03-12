@@ -96,7 +96,7 @@ def main():
             train_ds, batch_size=args.batch_size, num_replicas=n_gpus, shuffle=True
         )
         train_dl = torch.utils.data.DataLoader(
-            train_ds, batch_size=args.batch_size, sampler=train_sampler
+            train_ds, batch_size=None, batch_sampler=train_sampler
         )
 
     else:
@@ -211,7 +211,7 @@ def main():
             shuffle=True,
         )
         train_dl = torch.utils.data.DataLoader(
-            train_ds, batch_size=args.batch_size, sampler=train_sampler
+            train_ds, batch_size=None, batch_sampler=train_sampler
         )
 
     resume_flag = args.resume_from_checkpoint
