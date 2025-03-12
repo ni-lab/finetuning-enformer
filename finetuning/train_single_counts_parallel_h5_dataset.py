@@ -202,6 +202,18 @@ def main():
         freeze_transformer=args.freeze_transformer,
     )
 
+    if args.use_samples_from_one_gene_per_batch:
+        train_sampler = SingleSampleGeneBatchSampler(
+            train_ds,
+            batch_size=args.batch_size,
+            num_replicas=n_gpus,
+            rank=trainer.global_rank,
+            shuffle=True,
+        )
+        train_dl = torch.utils.data.DataLoader(
+            train_ds, batch_size=args.batch_size, sampler=train_sampler
+        )
+
     resume_flag = args.resume_from_checkpoint
     if args.resume_from_checkpoint:
         if len(os.listdir(ckpts_dir)) == 0:
