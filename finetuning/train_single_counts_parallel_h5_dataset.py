@@ -102,12 +102,14 @@ def main():
             train_ds,
             batch_sampler=train_sampler,
         )
+        val_dist_sampler = torch.utils.data.distributed.DistributedSampler(
+            val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False, rank=0
+        )
         val_dl = torch.utils.data.DataLoader(
-            torch.utils.data.distributed.DistributedSampler(
-                val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False, rank=0
-            ),
+            val_ds,
             batch_size=args.batch_size,
             shuffle=False,
+            sampler=val_dist_sampler,
         )
 
     else:
@@ -227,16 +229,18 @@ def main():
             train_ds,
             batch_sampler=train_sampler,
         )
+        val_dist_sampler = torch.utils.data.distributed.DistributedSampler(
+            val_ds,
+            num_replicas=n_gpus,
+            shuffle=False,
+            drop_last=False,
+            rank=trainer.global_rank,
+        )
         val_dl = torch.utils.data.DataLoader(
-            torch.utils.data.distributed.DistributedSampler(
-                val_ds,
-                num_replicas=n_gpus,
-                rank=trainer.global_rank,
-                shuffle=False,
-                drop_last=False,
-            ),
+            val_ds,
             batch_size=args.batch_size,
             shuffle=False,
+            sampler=val_dist_sampler,
         )
 
     resume_flag = args.resume_from_checkpoint
