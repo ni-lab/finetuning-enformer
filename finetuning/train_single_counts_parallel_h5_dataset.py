@@ -71,6 +71,11 @@ def main():
     torch.manual_seed(args.data_seed)
     np.random.seed(args.data_seed)
 
+    os.environ["SLURM_JOB_NAME"] = "interactive"
+    # get number of gpus
+    n_gpus = torch.cuda.device_count()
+    print(f"Number of GPUs: {n_gpus}")
+
     train_ds = SampleH5Dataset(
         args.train_data_path,
         seqlen=args.seqlen,
@@ -88,7 +93,7 @@ def main():
 
     if args.use_samples_from_one_gene_per_batch:
         train_sampler = SingleSampleGeneBatchSampler(
-            train_ds, batch_size=args.batch_size, shuffle=True
+            train_ds, batch_size=args.batch_size, num_replicas=n_gpus, shuffle=True
         )
         train_dl = torch.utils.data.DataLoader(
             train_ds, batch_size=args.batch_size, sampler=train_sampler
@@ -147,11 +152,6 @@ def main():
         mode="min",
         patience=5,
     )
-
-    os.environ["SLURM_JOB_NAME"] = "interactive"
-    # get number of gpus
-    n_gpus = torch.cuda.device_count()
-    print(f"Number of GPUs: {n_gpus}")
 
     # print hyperparameters
     # we accumulate gradients over 64 samples to match the original Enformer model's batch size
