@@ -26,8 +26,6 @@ def parse_args():
     parser.add_argument("--use_scheduler", action=BooleanOptionalAction, default=False)
     parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
-    parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--reverse_complement_prob", type=float, default=0.5)
     parser.add_argument(

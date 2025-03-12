@@ -3,7 +3,7 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
-from datasets import SampleH5Dataset
+from datasets import SampleH5Dataset, SingleSampleGeneBatchSampler
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
@@ -26,14 +26,17 @@ def parse_args():
     parser.add_argument("--use_scheduler", action=BooleanOptionalAction, default=False)
     parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
-    parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
     parser.add_argument("--reverse_complement_prob", type=float, default=0.5)
     parser.add_argument(
         "--do_not_random_shift", action=BooleanOptionalAction, default=False
     )
     parser.add_argument("--random_shift_max", type=int, default=3)
+    parser.add_argument(
+        "--use_samples_from_one_gene_per_batch",
+        action=BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
@@ -83,9 +86,18 @@ def main():
         shift_max=0,
     )
 
-    train_dl = torch.utils.data.DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True
-    )
+    if args.use_samples_from_one_gene_per_batch:
+        train_sampler = SingleSampleGeneBatchSampler(
+            train_ds, batch_size=args.batch_size, shuffle=True
+        )
+        train_dl = torch.utils.data.DataLoader(
+            train_ds, batch_size=args.batch_size, sampler=train_sampler
+        )
+
+    else:
+        train_dl = torch.utils.data.DataLoader(
+            train_ds, batch_size=args.batch_size, shuffle=True
+        )
 
     val_dl = torch.utils.data.DataLoader(
         val_ds, batch_size=args.batch_size, shuffle=False
@@ -100,6 +112,8 @@ def main():
         run_suffix += "_freeze_cnn"
     if args.freeze_transformer:
         run_suffix += "_freeze_transformer"
+    if args.use_samples_from_one_gene_per_batch:
+        run_suffix += "_one_gene_per_batch"
 
     run_save_dir = os.path.join(
         args.save_dir,
@@ -144,7 +158,10 @@ def main():
     # commented out line shows the explicit calculation of max_steps
     # max_steps = (args.max_epochs * (len(train_ds) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
     # simplified formula below
-    max_steps = args.max_epochs * (len(train_ds) // 64)
+    if args.use_samples_from_one_gene_per_batch:
+        max_steps = args.max_epochs * ((len(train_sampler) * n_gpus) // 64)
+    else:
+        max_steps = args.max_epochs * (len(train_ds) // 64)
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
     print(f"use_scheduler: {args.use_scheduler}")
