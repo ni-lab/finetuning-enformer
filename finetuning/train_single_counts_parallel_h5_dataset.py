@@ -97,11 +97,7 @@ def main():
         )
         train_dl = torch.utils.data.DataLoader(
             train_ds,
-            batch_size=None,
             batch_sampler=train_sampler,
-            shuffle=False,
-            drop_last=False,
-            sampler=None,
         )
 
     else:
@@ -217,11 +213,7 @@ def main():
         )
         train_dl = torch.utils.data.DataLoader(
             train_ds,
-            batch_size=None,
             batch_sampler=train_sampler,
-            shuffle=False,
-            drop_last=False,
-            sampler=None,
         )
 
     resume_flag = args.resume_from_checkpoint
