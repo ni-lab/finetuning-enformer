@@ -3,6 +3,9 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
+import torch.utils
+import torch.utils.data
+import torch.utils.data.distributed
 from datasets import SampleH5Dataset, SingleSampleGeneBatchSampler
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
@@ -99,15 +102,21 @@ def main():
             train_ds,
             batch_sampler=train_sampler,
         )
+        val_dl = torch.utils.data.DataLoader(
+            torch.utils.data.distributed.DistributedSampler(
+                val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False
+            ),
+            batch_size=args.batch_size,
+            shuffle=False,
+        )
 
     else:
         train_dl = torch.utils.data.DataLoader(
             train_ds, batch_size=args.batch_size, shuffle=True
         )
-
-    val_dl = torch.utils.data.DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False
-    )
+        val_dl = torch.utils.data.DataLoader(
+            val_ds, batch_size=args.batch_size, shuffle=False
+        )
 
     run_suffix = f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}"
     if args.use_random_init:
@@ -186,6 +195,9 @@ def main():
             64 // (args.batch_size * n_gpus)
         ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
         strategy="ddp_find_unused_parameters_true",
+        use_distributed_sampler=False
+        if args.use_samples_from_one_gene_per_batch
+        else True,
     )
 
     model = SingleRegressionOnCountsFloatPrecision(
@@ -214,6 +226,17 @@ def main():
         train_dl = torch.utils.data.DataLoader(
             train_ds,
             batch_sampler=train_sampler,
+        )
+        val_dl = torch.utils.data.DataLoader(
+            torch.utils.data.distributed.DistributedSampler(
+                val_ds,
+                num_replicas=n_gpus,
+                rank=trainer.global_rank,
+                shuffle=False,
+                drop_last=False,
+            ),
+            batch_size=args.batch_size,
+            shuffle=False,
         )
 
     resume_flag = args.resume_from_checkpoint
