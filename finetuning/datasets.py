@@ -36,7 +36,7 @@ def subsample_gene_to_idxs(
     return subsampled_gene_to_idxs
 
 
-class SingleSampleGeneBatchSampler(torch.utils.data.Sampler):
+class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
     def __init__(self, dataset, batch_size, num_replicas=None, rank=None, shuffle=True):
         """
         A batch sampler that ensures each batch contains samples from a single gene.
