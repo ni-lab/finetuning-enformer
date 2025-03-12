@@ -118,10 +118,8 @@ class SingleSampleGeneBatchSampler(torch.utils.data.Sampler):
                 # shuffle samples within each gene
                 indices = np.random.permutation(indices)
             # split the indices into batches
-            # only keep enough indices to make full batches
+            # only keep enough indices to make full batches across all replicas
             num_batches = len(indices) // (self.batch_size * self.num_replicas)
-            # num_batches also needs to be divisible by the number of replicas for DDP - should be true by construction
-            assert num_batches % self.num_replicas == 0
             valid_indices = indices[: num_batches * self.batch_size]
             valid_indices = np.array_split(valid_indices, num_batches)
             all_batches.extend(valid_indices)
