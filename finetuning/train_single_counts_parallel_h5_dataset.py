@@ -104,7 +104,7 @@ def main():
         )
         val_dl = torch.utils.data.DataLoader(
             torch.utils.data.distributed.DistributedSampler(
-                val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False
+                val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False, rank=0
             ),
             batch_size=args.batch_size,
             shuffle=False,
