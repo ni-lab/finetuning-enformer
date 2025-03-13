@@ -171,7 +171,9 @@ def main():
     # max_steps = (args.max_epochs * (len(train_ds) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
     # simplified formula below
     if args.use_samples_from_one_gene_per_batch:
-        max_steps = args.max_epochs * ((len(train_sampler) * n_gpus) // 64)
+        max_steps = args.max_epochs * (
+            (len(train_sampler) * n_gpus * args.batch_size) // 64
+        )
     else:
         max_steps = args.max_epochs * (len(train_ds) // 64)
     print(f"lr: {args.lr}")

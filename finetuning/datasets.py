@@ -112,9 +112,9 @@ class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
         # compute len
         self.length = 0
         for gene in self.unique_genes:
-            self.length += (
-                len(self.gene_to_indices[gene]) // (self.batch_size * self.num_replicas)
-            ) * self.batch_size
+            self.length += len(self.gene_to_indices[gene]) // (
+                self.batch_size * self.num_replicas
+            )
 
     def __iter__(self):
         if self.shuffle:
