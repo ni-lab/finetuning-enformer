@@ -25,6 +25,8 @@ We fine-tune Enformer [1] in our work. We use the PyTorch port of Enformer avail
 - `process_Malinois_MPRA_data/`: Code to download and format the MPRA data collected by Siraj et al. [2] from ENCODE. This data is also used for joint training.
 - `vcf_utils/`: Miscellaneous utils used for processing VCF files.
 
+The fine-tuned models used in our work are available at https://huggingface.co/anikethjr/finetuning-enformer/tree/main in the ``saved_models`` directory.
+
 ## References:
 1. Avsec, Žiga, et al. "Effective gene expression prediction from sequence by integrating long-range interactions." Nature methods 18.10 (2021): 1196-1203.
 2. Siraj, Layla, et al. "Functional dissection of complex and molecular trait variants at single nucleotide resolution." bioRxiv (2023).
