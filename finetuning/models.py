@@ -2020,9 +2020,6 @@ class PairwiseRegressionOnCountsFloatPrecision(BaseModule):
         self.center_start = (n_total_bins - avg_center_n_bins) // 2
         self.center_end = self.center_start + avg_center_n_bins
 
-        self.train_metrics = self.all_metrics.clone(prefix="train/")
-        self.val_metrics = self.all_metrics.clone(prefix="val/")
-
     def forward(
         self,
         X,
