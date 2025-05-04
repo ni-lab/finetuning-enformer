@@ -124,15 +124,15 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_regression_loss:.4f}",
-        monitor="val/pairwise_regression_loss",
+        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_smape_loss:.4f}",
+        monitor="val/pairwise_smape_loss",
         mode="min",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/pairwise_regression_loss",
+        monitor="val/pairwise_smape_loss",
         mode="min",
         patience=5,
     )
