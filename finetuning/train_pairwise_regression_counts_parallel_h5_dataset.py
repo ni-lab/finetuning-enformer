@@ -217,7 +217,7 @@ def main():
 
     if not resume_flag:
         print("Training from scratch.")
-        trainer.validate(model, dataloaders=val_dl)
+        # trainer.validate(model, dataloaders=val_dl)
         trainer.fit(model, train_dl, val_dl)
 
 
