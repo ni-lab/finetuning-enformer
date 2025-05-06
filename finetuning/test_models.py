@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import BasePredictionWriter
 from models import (
     BaselineEnformer, PairwiseClassificationFloatPrecision,
     PairwiseClassificationWithOriginalDataJointTrainingFloatPrecision,
-    PairwiseRegressionFloatPrecision,
+    PairwiseRegressionFloatPrecision, PairwiseRegressionOnCountsFloatPrecision,
     PairwiseRegressionWithMalinoisMPRAJointTrainingFloatPrecision,
     PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision,
     SingleRegressionFloatPrecision, SingleRegressionOnCountsFloatPrecision)
@@ -50,6 +50,7 @@ def parse_args():
             "single_regression",
             "single_regression_counts",
             "regression",
+            "regression_counts",
             "joint_regression",
             "classification",
             "joint_classification",
@@ -386,6 +387,15 @@ def main():
                     n_total_bins=(args.seqlen // 128),
                 )
                 print("Predicting using PairwiseRegressionFloatPrecision")
+            elif args.model_type == "regression_counts":
+                model = PairwiseRegressionOnCountsFloatPrecision(
+                    lr=0,
+                    weight_decay=0,
+                    use_scheduler=False,
+                    warmup_steps=0,
+                    n_total_bins=(args.seqlen // 128),
+                )
+                print("Predicting using PairwiseRegressionOnCountsFloatPrecision")
             elif args.model_type == "joint_regression":
                 model = PairwiseRegressionWithOriginalDataJointTrainingFloatPrecision(
                     lr=0,
