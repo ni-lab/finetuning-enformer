@@ -167,9 +167,7 @@ def main():
         default_root_dir=args.save_dir,
         callbacks=[checkpointing_cb, early_stopping_cb]
         if not args.use_random_init
-        else [
-            checkpointing_cb
-        ],  # don't use early stopping if using random init to aid convergence
+        else [checkpointing_cb],
         precision="32-true",
         accumulate_grad_batches=(
             64 // (args.batch_size * n_gpus)

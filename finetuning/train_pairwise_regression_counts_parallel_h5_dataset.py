@@ -3,15 +3,13 @@ from argparse import ArgumentParser, BooleanOptionalAction
 
 import numpy as np
 import torch
-import torch.utils
-import torch.utils.data
-import torch.utils.data.distributed
-from datasets import SampleH5Dataset, SingleSampleGeneBatchSampler
+from datasets import (PairwiseRegressionOnCountsH5Dataset,
+                      PairwiseRegressionOnCountsH5DatasetDynamicSampling)
 from lightning import Trainer
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from models import SingleRegressionOnCountsFloatPrecision
+from models import PairwiseRegressionOnCountsFloatPrecision
 
 np.random.seed(97)
 torch.manual_seed(97)
@@ -29,18 +27,15 @@ def parse_args():
     parser.add_argument("--use_scheduler", action=BooleanOptionalAction, default=False)
     parser.add_argument("--warmup_steps", type=int, default=1000)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--train_n_pairs_per_gene", type=int, default=250)
+    parser.add_argument("--val_n_pairs_per_gene", type=int, default=100)
     parser.add_argument("--seqlen", type=int, default=128 * 384)
+    parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--reverse_complement_prob", type=float, default=0.5)
     parser.add_argument(
         "--do_not_random_shift", action=BooleanOptionalAction, default=False
     )
     parser.add_argument("--random_shift_max", type=int, default=3)
-    parser.add_argument(
-        "--use_samples_from_one_gene_per_batch",
-        action=BooleanOptionalAction,
-        default=False,
-    )
-    parser.add_argument("--max_epochs", type=int, default=50)
     parser.add_argument("--enformer_checkpoint", type=str, default=None)
     parser.add_argument("--state_dict_subset_prefix", type=str, default=None)
     parser.add_argument(
@@ -57,6 +52,7 @@ def parse_args():
         "--freeze_transformer", action=BooleanOptionalAction, default=False
     )
     parser.add_argument("--data_seed", type=int, default=42)
+    parser.add_argument("--train_set_subsample_ratio", type=float, default=1.0)
     parser.add_argument(
         "--resume_from_checkpoint", action=BooleanOptionalAction, default=False
     )
@@ -70,57 +66,35 @@ def main():
         print("Not using random shift.")
         args.random_shift_max = 0
 
-    # set seed
-    torch.manual_seed(args.data_seed)
-    np.random.seed(args.data_seed)
-
-    os.environ["SLURM_JOB_NAME"] = "interactive"
-    # get number of gpus
-    n_gpus = torch.cuda.device_count()
-    print(f"Number of GPUs: {n_gpus}")
-
-    train_ds = SampleH5Dataset(
+    pairwise_train_ds = PairwiseRegressionOnCountsH5DatasetDynamicSampling(
         args.train_data_path,
+        n_pairs_per_gene=args.train_n_pairs_per_gene,
         seqlen=args.seqlen,
+        random_seed=args.data_seed,
         reverse_complement_prob=args.reverse_complement_prob,
         random_shift=not args.do_not_random_shift,
         random_shift_max=args.random_shift_max,
+        subsample_ratio=args.train_set_subsample_ratio,
     )
-
-    val_ds = SampleH5Dataset(
+    pairwise_val_ds = PairwiseRegressionOnCountsH5Dataset(
         args.val_data_path,
+        n_pairs_per_gene=args.val_n_pairs_per_gene,
         seqlen=args.seqlen,
-        return_reverse_complement=(args.reverse_complement_prob > 0.0),
+        return_reverse_complement=args.reverse_complement_prob > 0.0,
         shift_max=0,
     )
 
-    if args.use_samples_from_one_gene_per_batch:
-        train_sampler = SingleSampleGeneBatchSampler(
-            train_ds, batch_size=args.batch_size, num_replicas=n_gpus, shuffle=True
-        )
-        train_dl = torch.utils.data.DataLoader(
-            train_ds,
-            batch_sampler=train_sampler,
-        )
-        val_dist_sampler = torch.utils.data.distributed.DistributedSampler(
-            val_ds, num_replicas=n_gpus, shuffle=False, drop_last=False, rank=0
-        )
-        val_dl = torch.utils.data.DataLoader(
-            val_ds,
-            batch_size=args.batch_size,
-            shuffle=False,
-            sampler=val_dist_sampler,
-        )
+    train_dl = torch.utils.data.DataLoader(
+        pairwise_train_ds, batch_size=args.batch_size, shuffle=True
+    )
 
-    else:
-        train_dl = torch.utils.data.DataLoader(
-            train_ds, batch_size=args.batch_size, shuffle=True
-        )
-        val_dl = torch.utils.data.DataLoader(
-            val_ds, batch_size=args.batch_size, shuffle=False
-        )
+    val_dl = torch.utils.data.DataLoader(
+        pairwise_val_ds, batch_size=args.batch_size, shuffle=False
+    )
 
     run_suffix = f"_data_seed_{args.data_seed}_lr_{args.lr}_wd_{args.weight_decay}_rcprob_{args.reverse_complement_prob}_rsmax_{args.random_shift_max}"
+    if args.train_set_subsample_ratio < 1.0:
+        run_suffix += f"_subsample_ratio_{args.train_set_subsample_ratio}"
     if args.use_random_init:
         run_suffix += "_random_init"
     if args.add_gaussian_noise_to_pretrained_weights:
@@ -129,8 +103,6 @@ def main():
         run_suffix += "_freeze_cnn"
     if args.freeze_transformer:
         run_suffix += "_freeze_transformer"
-    if args.use_samples_from_one_gene_per_batch:
-        run_suffix += "_one_gene_per_batch"
 
     run_save_dir = os.path.join(
         args.save_dir,
@@ -152,30 +124,30 @@ def main():
 
     checkpointing_cb = ModelCheckpoint(
         dirpath=ckpts_dir,
-        filename="epoch={epoch}-step={step}-val_loss={val/smape_loss:.4f}-val_r2_score={val/r2_score:.4f}",
-        monitor="val/smape_loss",
+        filename="epoch={epoch}-step={step}-val_loss={val/pairwise_smape_loss:.4f}",
+        monitor="val/pairwise_smape_loss",
         mode="min",
         save_top_k=-1,
         auto_insert_metric_name=False,
     )
 
     early_stopping_cb = EarlyStopping(
-        monitor="val/smape_loss",
+        monitor="val/pairwise_smape_loss",
         mode="min",
         patience=5,
     )
 
+    os.environ["SLURM_JOB_NAME"] = "interactive"
+    # get number of gpus
+    n_gpus = torch.cuda.device_count()
+    print(f"Number of GPUs: {n_gpus}")
+
     # print hyperparameters
     # we accumulate gradients over 64 samples to match the original Enformer model's batch size
     # commented out line shows the explicit calculation of max_steps
-    # max_steps = (args.max_epochs * (len(train_ds) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
+    # max_steps = (args.max_epochs * (len(pairwise_train_ds) // (args.batch_size * n_gpus))) // (64 // (args.batch_size * n_gpus))
     # simplified formula below
-    if args.use_samples_from_one_gene_per_batch:
-        max_steps = args.max_epochs * (
-            (len(train_sampler) * n_gpus * args.batch_size) // 64
-        )
-    else:
-        max_steps = args.max_epochs * (len(train_ds) // 64)
+    max_steps = args.max_epochs * (len(pairwise_train_ds) // 64)
     print(f"lr: {args.lr}")
     print(f"weight_decay: {args.weight_decay}")
     print(f"use_scheduler: {args.use_scheduler}")
@@ -199,17 +171,14 @@ def main():
             64 // (args.batch_size * n_gpus)
         ),  # original Enformer model was trained with 64 batch size using the same 0.0005 learning rate
         strategy="ddp_find_unused_parameters_true",
-        use_distributed_sampler=False
-        if args.use_samples_from_one_gene_per_batch
-        else True,
     )
 
-    model = SingleRegressionOnCountsFloatPrecision(
+    model = PairwiseRegressionOnCountsFloatPrecision(
         lr=args.lr,
         weight_decay=args.weight_decay,
         use_scheduler=args.use_scheduler,
         warmup_steps=args.warmup_steps,
-        n_total_bins=train_ds.get_total_n_bins(),
+        n_total_bins=pairwise_train_ds.get_total_n_bins(),
         checkpoint=args.enformer_checkpoint,
         state_dict_subset_prefix=args.state_dict_subset_prefix,
         use_random_init=args.use_random_init,
@@ -218,32 +187,6 @@ def main():
         freeze_cnn=args.freeze_cnn,
         freeze_transformer=args.freeze_transformer,
     )
-
-    if args.use_samples_from_one_gene_per_batch:
-        train_sampler = SingleSampleGeneBatchSampler(
-            train_ds,
-            batch_size=args.batch_size,
-            num_replicas=n_gpus,
-            rank=trainer.global_rank,
-            shuffle=True,
-        )
-        train_dl = torch.utils.data.DataLoader(
-            train_ds,
-            batch_sampler=train_sampler,
-        )
-        val_dist_sampler = torch.utils.data.distributed.DistributedSampler(
-            val_ds,
-            num_replicas=n_gpus,
-            shuffle=False,
-            drop_last=False,
-            rank=trainer.global_rank,
-        )
-        val_dl = torch.utils.data.DataLoader(
-            val_ds,
-            batch_size=args.batch_size,
-            shuffle=False,
-            sampler=val_dist_sampler,
-        )
 
     resume_flag = args.resume_from_checkpoint
     if args.resume_from_checkpoint:
@@ -274,7 +217,7 @@ def main():
 
     if not resume_flag:
         print("Training from scratch.")
-        trainer.validate(model, dataloaders=val_dl)
+        # trainer.validate(model, dataloaders=val_dl)
         trainer.fit(model, train_dl, val_dl)
 
 

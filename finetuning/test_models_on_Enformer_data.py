@@ -190,6 +190,43 @@ def find_best_checkpoint_and_verify_that_training_is_complete(
                 best_checkpoint = f
                 best_metric_epoch = int(f.split("epoch=")[1].split("-")[0])
 
+        elif task == "finetune_on_Enformer_data":
+            # names are of the form "epoch={epoch}-step={step}-val_r2={val/human_r2_score/dataloader_idx_0:.4f}"
+            ckpt_metric = f.split("val_r2=")[1].split(".ckpt")[0]
+            ckpt_metric = float(ckpt_metric)
+
+            if best_metric is None or ckpt_metric >= best_metric:
+                if best_metric is not None and ckpt_metric == best_metric:
+                    # open the ckpt files to compare the exact metric values
+                    best_ckpt_so_far = torch.load(
+                        os.path.join(checkpoint_dir, best_checkpoint),
+                        map_location="cpu",
+                    )
+                    ckpt = torch.load(
+                        os.path.join(checkpoint_dir, f), map_location="cpu"
+                    )
+
+                    check = False
+                    for key in ckpt["callbacks"].keys():
+                        if key.startswith("ModelCheckpoint"):
+                            print(
+                                f"Using scores from ckpts to compare the following ckpt files: {best_checkpoint} and {f}"
+                            )
+                            ckpt_metric = ckpt["callbacks"][key]["current_score"]
+                            best_metric = best_ckpt_so_far["callbacks"][key][
+                                "current_score"
+                            ]
+                            if ckpt_metric > best_metric:
+                                check = True
+                            break
+
+                    if not check:
+                        continue
+
+                best_metric = ckpt_metric
+                best_checkpoint = f
+                best_metric_epoch = int(f.split("epoch=")[1].split("-")[0])
+
     # check if the training is complete
     if best_checkpoint is None:
         raise ValueError("No checkpoint found in the directory.")
@@ -284,7 +321,15 @@ def main():
             )
         else:
             # find the best checkpoint and verify that the training is complete
-            task = "regression" if "regression" in args.model_type else "classification"
+            task = (
+                "finetune_on_Enformer_data"
+                if "_on_enformer_data" in args.checkpoints_dir
+                else (
+                    "regression"
+                    if "regression" in args.model_type
+                    else "classification"
+                )
+            )
             best_ckpt_path = find_best_checkpoint_and_verify_that_training_is_complete(
                 args.checkpoints_dir,
                 task,

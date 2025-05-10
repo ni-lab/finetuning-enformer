@@ -2,11 +2,13 @@ import glob
 import json
 import os
 import pickle
+from collections import defaultdict
 
 import h5py
 import numpy as np
 import pandas as pd
 import torch
+import torch.distributed as dist
 import utils
 from enformer_pytorch.data import seq_indices_to_one_hot, str_to_one_hot
 from pyfaidx import Fasta
@@ -32,6 +34,127 @@ def subsample_gene_to_idxs(
         n_samples = int(len(gene_to_idxs[g]) * subsample_ratio)
         subsampled_gene_to_idxs[g] = gene_to_idxs[g][:n_samples]
     return subsampled_gene_to_idxs
+
+
+class SingleSampleGeneBatchSampler(torch.utils.data.BatchSampler):
+    def __init__(
+        self,
+        dataset,
+        batch_size,
+        drop_last=True,
+        num_replicas=None,
+        rank=None,
+        shuffle=True,
+    ):
+        """
+        A batch sampler that ensures each batch contains samples from a single gene.
+        Works with Distributed Data Parallel (DDP) by ensuring each process gets a unique subset of genes.
+
+        Args:
+            dataset: The dataset to sample from.
+            batch_size: Number of samples per batch.
+            num_replicas: Number of processes (GPUs) in DDP (automatically inferred if None).
+            rank: Process rank in DDP (automatically inferred if None).
+            shuffle: Whether to shuffle genes across epochs.
+        """
+        super().__init__(dataset, batch_size, drop_last)
+
+        self.dataset = dataset
+        assert isinstance(
+            self.dataset, SampleH5Dataset
+        ), "SingleSampleGeneBatchSampler only works with SampleH5Dataset."
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        # get important attributes from the dataset object
+        # used in train mode
+        self.reverse_complement_prob = self.dataset.reverse_complement_prob
+        self.random_shift = self.dataset.random_shift
+        self.random_shift_max = self.dataset.random_shift_max
+
+        # used in val mode
+        self.return_reverse_complement = self.dataset.return_reverse_complement
+        self.shift_max = self.dataset.shift_max
+
+        self.dataset_len = len(self.dataset)
+        assert self.dataset_len == (
+            self.dataset.seqs.shape[0]
+            * (2 if self.return_reverse_complement else 1)
+            * ((2 * self.shift_max) + 1)
+        )
+
+        # get DDP world size and rank
+        if num_replicas is None:
+            num_replicas = dist.get_world_size() if dist.is_initialized() else 1
+        if rank is None:
+            rank = dist.get_rank() if dist.is_initialized() else 0
+
+        self.num_replicas = num_replicas
+        self.rank = rank
+        print("Sampler being constructed by rank", self.rank, "of", self.num_replicas)
+
+        # associate each gene with a list of indices
+        self.gene_to_indices = defaultdict(list)
+        for idx in range(self.dataset_len):
+            if self.return_reverse_complement:
+                true_idx = idx // (2 * ((2 * self.shift_max) + 1))
+            else:
+                true_idx = idx // ((2 * self.shift_max) + 1)
+            gene = self.dataset.genes[true_idx]
+            self.gene_to_indices[gene].append(idx)
+
+        # convert the lists of indices to numpy arrays
+        for gene in self.gene_to_indices:
+            self.gene_to_indices[gene] = np.array(self.gene_to_indices[gene])
+
+        self.unique_genes = np.array(list(self.gene_to_indices.keys()))
+
+        # compute len
+        self.length = 0
+        for gene in self.unique_genes:
+            self.length += len(self.gene_to_indices[gene]) // (
+                self.batch_size * self.num_replicas
+            )
+
+    def __iter__(self):
+        if self.shuffle:
+            # first shuffle the genes
+            self.unique_genes = np.random.permutation(self.unique_genes)
+
+        all_batches = []
+        for gene in self.unique_genes:
+            indices = self.gene_to_indices[gene]
+            if self.shuffle:
+                # shuffle samples within each gene
+                indices = np.random.permutation(indices)
+            # split the indices into batches
+            # only keep enough indices to make full batches across all replicas
+            num_batches = len(indices) // (self.batch_size * self.num_replicas)
+            valid_indices = indices[
+                : num_batches * (self.batch_size * self.num_replicas)
+            ]
+            valid_indices = np.array_split(
+                valid_indices, num_batches
+            )  # list of length num_batches, each element is a numpy array of indices of shape (batch_size * num_replicas,)
+            assert valid_indices[0].shape[0] == (
+                self.batch_size * self.num_replicas
+            ), f"valid_indices[0].shape[0]: {valid_indices[0].shape[0]}, batch_size * num_replicas: {self.batch_size * self.num_replicas}"
+            all_batches.extend(valid_indices)
+
+        all_batches = np.array(all_batches)
+        print("Total number of batches:", len(all_batches))
+        if self.shuffle:
+            # shuffle the order of the batches so that the batches are not in gene order
+            all_batches = np.random.permutation(all_batches)
+
+        for batch in all_batches:
+            # only return the batches that belong to the current process
+            start_idx = self.rank * self.batch_size
+            end_idx = (self.rank + 1) * self.batch_size
+            yield batch[start_idx:end_idx].tolist()
+
+    def __len__(self):
+        return self.length
 
 
 class RefDataset(torch.utils.data.Dataset):
