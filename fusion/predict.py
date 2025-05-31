@@ -10,7 +10,7 @@ from genomic_utils.variant import Variant
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-sys.path.append("../vcf_utils")
+sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/vcf_utils")
 import utils
 
 
@@ -21,9 +21,10 @@ def parse_args():
     parser.add_argument("--weight_dir", type=str, required=True, help="Directory containing model weights.")
     parser.add_argument("--temp_dir", type=str, required=True, help="Directory containing train/test pheno files.")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save predictions for each model.")
-    parser.add_argument("--counts_path", type=str, default="../process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
+    parser.add_argument("--counts_path", type=str, default="/data/yosef3/users/ruchir/finetuning-enformer/process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz")
     parser.add_argument("--models", nargs="+", type=str, default=["top1", "lasso", "enet", "blup", "bslmm"])
     parser.add_argument("--maf", type=float, default=0.05)
+    parser.add_argument("--context_size", type=int, default=128 * 384)
     return parser.parse_args()
 # fmt: on
 
@@ -57,7 +58,7 @@ def load_train_and_test_dosages(
     train_samples: list[str],
     test_samples: list[str],
     maf: float,
-    context_size: int = 128 * 384,
+    context_size: int,
     scale_dosages: bool = True,
     flip_variants: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -200,7 +201,7 @@ def main():
 
         # Load (scaled) test dosages
         _, test_dosages = load_train_and_test_dosages(
-            counts_df, gene, train_samples, test_samples, args.maf
+            counts_df, gene, train_samples, test_samples, args.maf, args.context_size
         )
 
         train_Y = get_expr_from_pheno_file(train_pheno_path)
