@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from collections import defaultdict
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 import numpy as np
 import pandas as pd
@@ -16,9 +16,11 @@ from tqdm import tqdm
 
 from genomic_utils.variant import Variant
 
-sys.path += ["../../finetuning", "../../vcf_utils"]
-import models
+# Must import in this order because the finetuning directory also has a utils.py file
+sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/vcf_utils") # "../../vcf_utils"
 import utils
+sys.path.append("/data/yosef3/users/ruchir/finetuning-enformer/finetuning") # "../../finetuning", 
+import models
 
 
 class Dataset(torch.utils.data.Dataset):
