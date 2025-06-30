@@ -1,0 +1,5 @@
+top1: 264 seconds elapsed
+lasso: 221 seconds elapsed
+enet: 221 seconds elapsed
+blup: 224 seconds elapsed
+bslmm: 223 seconds elapsed
