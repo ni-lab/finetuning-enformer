@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from collections import defaultdict
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import numpy as np
 import pandas as pd
@@ -58,7 +58,9 @@ class Dataset(torch.utils.data.Dataset):
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument(
-        "model_type", type=str, choices=["baseline", "classification", "regression"]
+        "model_type", 
+        type=str, 
+        choices=["baseline", "classification", "regression", "single_regression"]
     )
     parser.add_argument("output_dir", type=str)
     parser.add_argument("--model_path", type=str, default=None)
@@ -99,11 +101,11 @@ def load_model(model_type: str, model_path: str, seqlen: int):
             "EleutherAI/enformer-official-rough", target_length=seqlen // 128
         )
     elif model_type == "classification":
-        return models.PairwiseClassificationFloatPrecision.load_from_checkpoint(
-            model_path
-        )
+        return models.PairwiseClassificationFloatPrecision.load_from_checkpoint(model_path)
     elif model_type == "regression":
         return models.PairwiseRegressionFloatPrecision.load_from_checkpoint(model_path)
+    elif model_type == "single_regression":
+        return models.SingleRegressionOnCountsFloatPrecision.load_from_checkpoint(model_path)
     else:
         raise ValueError(f"Invalid model_type: {model_type}")
 
@@ -113,21 +115,14 @@ def make_predictions(
     model,
     X,
     model_type: str,
-    seqlen: int,
     track_idx: int = 5110,
     avg_center_n_bins: int = 10,
 ) -> np.ndarray:
     """
     X (tensor): (samples, length, 4)
     """
-    if model_type == "baseline" or model_type == "classification":
-        if model_type == "baseline":
-            outs = model(X)["human"][:, :, track_idx]  # (samples, bins)
-        if model_type == "classification":
-            outs = model.base(X, head="human", target_length=seqlen // 128)[
-                :, :, track_idx
-            ]
-
+    if model_type == "baseline":
+        outs = model(X)["human"][:, :, track_idx]  # (samples, bins)
         assert outs.ndim == 2
         assert outs.shape[1] >= avg_center_n_bins
 
@@ -135,20 +130,13 @@ def make_predictions(
         bin_end = bin_start + avg_center_n_bins
         outs = outs[:, bin_start:bin_end].mean(dim=1)
         return outs.cpu().numpy()
-
-    elif model_type == "regression":
-        outs = model.base(
-            X, return_only_embeddings=True, target_length=model.hparams.n_total_bins
-        )  # (samples, bins, embedding_dim)
-
-        bin_start = (outs.shape[1] - avg_center_n_bins) // 2
-        bin_end = bin_start + avg_center_n_bins
-        outs = outs[:, bin_start:bin_end, :]  # (samples, center_bins, embedding_dim)
-
-        outs = model.attention_pool(outs)  # (samples, embedding_dim)
-        outs = model.prediction_head(outs)  # (samples, 1)
-        outs = outs.squeeze(1)  # (samples,)
+    elif model_type in ["classification", "regression", "single_regression"]:
+        outs = model(X, return_base_predictions=False, no_haplotype=True)
+        assert outs.ndim == 1
+        assert outs.shape[0] == X.shape[0]
         return outs.cpu().numpy()
+    else:
+        raise ValueError(f"Invalid model_type: {model_type}")
 
 
 def make_predictions_on_ref_seq(
@@ -158,7 +146,7 @@ def make_predictions_on_ref_seq(
     one_hot_ref_seq = str_to_one_hot(ref_seq)
     one_hot_ref_seq_rc = str_to_one_hot(ref_seq_rc)
     X = torch.stack([one_hot_ref_seq, one_hot_ref_seq_rc]).to(device)  # (2, length, 4)
-    preds = make_predictions(model, X, model_type, seqlen)  # (2,)
+    preds = make_predictions(model, X, model_type)  # (2,)
     return preds.mean()
 
 
@@ -209,7 +197,7 @@ def main():
         variant_preds = defaultdict(list)
         for batch in tqdm(combined_dl):
             seqs = batch["seq"].to(device)
-            outs = make_predictions(model, seqs, args.model_type, args.seqlen)
+            outs = make_predictions(model, seqs, args.model_type)
             for v_str, out in zip(batch["variant"], outs):
                 v = Variant.create_from_str(v_str)
                 variant_preds[v].append(out)
