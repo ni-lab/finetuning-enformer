@@ -32,6 +32,7 @@ def get_genotype_matrix(
     tss_pos: int,
     context_size: int,
     remove_ac0: bool = True,
+    remove_ac1: bool = False,
     include_indels: bool = False
 ) -> pd.DataFrame:
     """
@@ -70,6 +71,9 @@ def get_genotype_matrix(
         variant_genotypes = [genotype.split(":")[0] for genotype in row[9:]]
         # Skip variants that do not have at least one alternate allele
         if remove_ac0 and not any(convert_to_dosage(gt) > 0 for gt in variant_genotypes):
+            continue
+        # Skip variants that do not have at least one reference allele
+        if remove_ac1 and not any(convert_to_dosage(gt) < 2 for gt in variant_genotypes):
             continue
 
         variants.append(variant)
