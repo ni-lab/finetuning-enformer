@@ -20,7 +20,6 @@ We fine-tune Enformer [1] in our work. We use the PyTorch port of Enformer avail
 - `fusion/`: Code to run variant-based baseline methods.
 - `analysis/`: Scripts used for analysing predictions and generating figures.
 - `process_geuvadis_data/`: Scripts for processing personal gene expression data from the GEUVADIS consortium. The processed data used in our experiments can be found at `process_geuvadis_data/log_tpm/corrected_log_tpm.annot.csv.gz`.
-- `process_sequence_data/`: Scripts to obtain personal genome sequences for individuals with matching gene expression data.
 - `process_enformer_data/`: Code to build Enformer training data from Basenji2 training data by expanding input sequences. This data is used for joint training along with the personal genome and transcriptome data.
 - `process_Malinois_MPRA_data/`: Code to download and format the MPRA data collected by Siraj et al. [2] from ENCODE. This data is also used for joint training.
 - `vcf_utils/`: Miscellaneous utils used for processing VCF files.
@@ -77,7 +76,7 @@ We provide instructions to reproduce the main results of our work. The code is d
 
 ## Computing the overall performance of the fine-tuned models
 
-To compute the overall performance of the fine-tuned models, we use the test set and the rest unseen filtered set -- the test set contains some unseen genes while the rest unseen filtered set contains the other unseen genes that are not on the train or val chromosomes. The following commands get predictions from the baseline Enformer model and the single sample regression, pairwise regression, and pairwise classification models for the test set and rest unseen filtered set. The results are saved in the `test_preds/` and `rest_unseen_filtered_preds/` directories respectively. The `--use_reverse_complement` flag is used to obtain reverse complement predictions before averaging predictions from both strands to get the final predictions, and the `--create_best_ckpt_copy` flag is used to create a copy of the best checkpoint for each model.
+To compute the overall performance of the fine-tuned models, we use the test set and the rest unseen filtered set -- the test set contains some unseen genes while the rest unseen filtered set contains even more unseen genes. The following commands get predictions from the baseline Enformer model and the single sample regression, pairwise regression, and pairwise classification models for the test set and rest unseen filtered set. The results are saved in the `test_preds/` and `rest_unseen_filtered_preds/` directories respectively. The `--use_reverse_complement` flag is used to obtain reverse complement predictions before averaging predictions from both strands to get the final predictions, and the `--create_best_ckpt_copy` flag is used to create a copy of the best checkpoint for each model.
 
 ```bash
 # Get predictions from the baseline Enformer model
